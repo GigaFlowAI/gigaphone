@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Tooling caches
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# uv
+uv.lock
+
+# Node (TS language pack tooling, later)
+node_modules/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+
+# GigaPhone runtime artifacts (the committed config itself is NOT ignored)
+unresolved.json
+resolution.json

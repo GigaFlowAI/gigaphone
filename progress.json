@@ -1,0 +1,17 @@
+{
+  "project": "gigaphone",
+  "design_version": "0.4",
+  "updated": "2026-06-25",
+  "current_milestone": "M0 — Scaffold",
+  "milestones": {
+    "M0": { "title": "Scaffold", "status": "in_progress" },
+    "M1": { "title": "Neutral core spine", "status": "todo" },
+    "M2": { "title": "Python language pack", "status": "todo" },
+    "M3": { "title": "Generic OTel backend adapter", "status": "todo" },
+    "M4": { "title": "Discovery + resolution protocols", "status": "todo" },
+    "M5": { "title": "Harness adapters (Claude Code + Codex)", "status": "todo" },
+    "M6": { "title": "TypeScript pack + native backends + CI mode", "status": "todo" }
+  },
+  "next_task": "M1: define plan-record/boundary JSON contracts end-to-end and wire CLI subcommands to no-op handlers that read/write them.",
+  "notes": "Cross-session state record (structured JSON so agents don't inappropriately edit it). See docs/IMPLEMENTATION_PLAN.md for full sequencing."
+}

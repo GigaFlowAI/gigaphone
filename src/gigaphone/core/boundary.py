@@ -1,0 +1,37 @@
+"""Boundary vocabulary — invariant on all four axes (DESIGN §10, ADR-0003).
+
+These enums are the shared language between the classifier, the language packs (which
+detect the modes), and the backend adapters (which carry the fix primitive). They name
+no harness, language, vendor, or codebase.
+"""
+
+from __future__ import annotations
+
+from enum import StrEnum
+
+
+class BoundaryKind(StrEnum):
+    """What a boundary *is* (DESIGN §8.4 ``kind``)."""
+
+    LLM = "llm"  # the gateway call that talks to the model
+    TOOL_EXEC = "tool_exec"  # the function wrapping execution (trace the wrapper, not the sandbox)
+    TOOL_RESULT_SINK = "tool_result_sink"  # where the result is written back into the message list
+
+
+class FailureMode(StrEnum):
+    """Why a tool result fails to land nested + complete. Only the fix primitive differs
+    across axes; the mode itself is invariant (DESIGN §10)."""
+
+    NO_BOUNDARY = "no_boundary"  # no single consumption layer; exec inlined/scattered
+    UNTRACED = "untraced"  # boundary exists, no span
+    OFF_CONTEXT = "off_context"  # traced but off the agent's context → orphan root trace
+    LOSSY_OUTPUT = "lossy_output"  # traced but logs only the truncated model-facing string
+
+
+class Source(StrEnum):
+    """How a boundary was found (plan-record provenance, DESIGN §11)."""
+
+    ANCHOR = "anchor"  # built-in anchor catalog
+    FRAMEWORK = "framework"  # framework-level detection
+    SPEC = "spec"  # the committed boundary config
+    AGENT = "agent"  # resolved via the resolution protocol

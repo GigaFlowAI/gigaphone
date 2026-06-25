@@ -1,0 +1,23 @@
+# Example boundary config — the fourth axis as *data*, not code (ADR-0004, DESIGN §8.4).
+#
+# Produced by `gigaphone discover` and committed to the customer's repo. Deterministic
+# passes consume it; the LLM is in the loop for discovery and drift only, never per run.
+# `match.call` is a language-neutral dotted name compiled to a query in each active
+# language pack; raw tree-sitter patterns are the per-language escape hatch.
+
+boundaries:
+  - id: acme-gateway
+    kind: llm                                # llm | tool_exec | tool_result_sink
+    match: { call: "our_llm.chat" }
+    input: { arg: "messages" }
+    output: { path: "response.text" }
+    emit: { name: "acme.llm" }               # span type is set by the backend adapter from `kind`
+
+  - id: acme-coderunner
+    kind: tool_exec
+    match: { call: "sandbox.execute" }
+    input: { arg: "code" }
+    # Complete result, so the fix engine can repair `lossy_output` (not just the
+    # truncated model-facing string):
+    output: { paths: ["result.stdout", "result.stderr", "result.exit_code"] }
+    emit: { name: "acme.exec" }

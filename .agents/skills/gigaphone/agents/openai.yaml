@@ -1,0 +1,17 @@
+# Codex skill presentation + policy (optional metadata; SKILL.md body is shared).
+# https://developers.openai.com/codex/skills
+interface:
+  display_name: "GigaPhone"
+  short_description: "Trace-coverage instrumentation for AI agent tool executions — neutral across harness, language, vendor, codebase."
+  default_prompt: "Use GigaPhone to find and fix missing, lossy, or off-context tool/code-execution spans in this codebase, then verify them in the observability backend."
+
+policy:
+  # Implicit invocation is allowed: GigaPhone edits production code and presents diffs
+  # for approval, so it is safe for Codex to select it when tool spans look broken.
+  allow_implicit_invocation: true
+
+dependencies:
+  tools:
+    - type: command
+      value: gigaphone
+      description: "GigaPhone CLI engine (discover/detect/plan/resolve/fix/verify)."

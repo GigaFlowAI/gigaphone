@@ -4,6 +4,7 @@ Deterministic discovery is high-precision but misses indirect shapes; the harnes
 the proposal — REJECT false positives, ADD missed boundaries — and the result is committed.
 The model is in the loop only here, at authoring time; CI replays the committed config.
 """
+
 from __future__ import annotations
 
 from gigaphone.core.boundary import BoundaryKind

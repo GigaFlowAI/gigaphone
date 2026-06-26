@@ -1,4 +1,5 @@
 """agent_call boundary: kind, localization, discovery, resolution, catalog (DESIGN §8.4)."""
+
 from __future__ import annotations
 
 from gigaphone.adapters.backend.otel import OtelAdapter
@@ -7,14 +8,14 @@ from gigaphone.core.model import Descriptor
 from gigaphone.engine import discover as _discover
 from gigaphone.packs.python.pack import PythonPack
 
-_WRAPPER_SRC = '''\
+_WRAPPER_SRC = """\
 from __future__ import annotations
 from subagent_sdk import Runner
 
 def run_subagent(task: str):
     result = Runner.run(task)
     return result
-'''
+"""
 
 
 def test_agent_call_kind_value():
@@ -123,9 +124,7 @@ def test_discovery_finds_construct_then_carrier_shape(tmp_path):
 def test_unresolved_agent_call_uses_agent_wording():
     from gigaphone.engine.plan import build_plan
 
-    desc = Descriptor(
-        id="agent-x", kind=BoundaryKind.AGENT_CALL, match_call="svc.dispatch_unknown"
-    )
+    desc = Descriptor(id="agent-x", kind=BoundaryKind.AGENT_CALL, match_call="svc.dispatch_unknown")
     plan = build_plan([desc], boundaries=[])  # nothing localized
     assert len(plan.unresolved) == 1
     assert "sub-agent" in plan.unresolved[0].question
@@ -157,7 +156,8 @@ def _discover_src(tmp_path, name, src):
 
 def test_direct_call_matches_only_with_provenance(tmp_path):
     descs = _discover_src(
-        tmp_path, "h.py",
+        tmp_path,
+        "h.py",
         "from __future__ import annotations\n"
         "from agents import Runner\n\n"
         "def run_subagent(task):\n"
@@ -170,7 +170,8 @@ def test_direct_call_matches_only_with_provenance(tmp_path):
 
 def test_incidental_run_call_is_not_an_agent_boundary(tmp_path):
     descs = _discover_src(
-        tmp_path, "u.py",
+        tmp_path,
+        "u.py",
         "from __future__ import annotations\n"
         "import asyncio\n\n"
         "def call_async_from_sync(coro):\n"
@@ -181,7 +182,8 @@ def test_incidental_run_call_is_not_an_agent_boundary(tmp_path):
 
 def test_locally_constructed_receiver_resolves(tmp_path):
     descs = _discover_src(
-        tmp_path, "g.py",
+        tmp_path,
+        "g.py",
         "from __future__ import annotations\n"
         "from langgraph.graph import StateGraph\n\n"
         "def run_graph(state):\n"
@@ -193,7 +195,8 @@ def test_locally_constructed_receiver_resolves(tmp_path):
 
 def test_unresolvable_param_receiver_does_not_match(tmp_path):
     descs = _discover_src(
-        tmp_path, "p.py",
+        tmp_path,
+        "p.py",
         "from __future__ import annotations\n\n"
         "def run_graph(graph, state):\n"
         "    return graph.invoke(state)\n",
@@ -203,7 +206,8 @@ def test_unresolvable_param_receiver_does_not_match(tmp_path):
 
 def test_construct_carrier_same_function(tmp_path):
     descs = _discover_src(
-        tmp_path, "s.py",
+        tmp_path,
+        "s.py",
         "from __future__ import annotations\n"
         "from openhands.sdk import Agent\n"
         "import httpx\n\n"
@@ -216,7 +220,8 @@ def test_construct_carrier_same_function(tmp_path):
 
 def test_construct_in_helper_carrier_in_poster_DIFFERENT_functions(tmp_path):
     descs = _discover_src(
-        tmp_path, "svc.py",
+        tmp_path,
+        "svc.py",
         "from __future__ import annotations\n"
         "from openhands.sdk import Agent\n"
         "from openhands.models import StartConversationRequest\n"
@@ -234,7 +239,8 @@ def test_construct_in_helper_carrier_in_poster_DIFFERENT_functions(tmp_path):
 
 def test_arbitrary_agent_plus_post_without_framework_provenance_does_not_match(tmp_path):
     descs = _discover_src(
-        tmp_path, "x.py",
+        tmp_path,
+        "x.py",
         "from __future__ import annotations\n"
         "from mylib import Agent\n"
         "import httpx\n\n"
@@ -247,7 +253,8 @@ def test_arbitrary_agent_plus_post_without_framework_provenance_does_not_match(t
 
 def test_return_annotation_signal_catches_factory_built_dispatch(tmp_path):
     descs = _discover_src(
-        tmp_path, "svc.py",
+        tmp_path,
+        "svc.py",
         "from __future__ import annotations\n"
         "from openhands.agent_server.models import StartConversationRequest\n"
         "import httpx\n\n"
@@ -268,12 +275,13 @@ def test_return_annotation_signal_catches_factory_built_dispatch(tmp_path):
 def test_return_annotation_requires_carrier(tmp_path):
     # a builder annotated -> StartConversationRequest but with NO outbound carrier is not a dispatch
     descs = _discover_src(
-        tmp_path, "b.py",
+        tmp_path,
+        "b.py",
         "from __future__ import annotations\n"
         "from openhands.agent_server.models import StartConversationRequest\n\n"
         "def _build(x) -> StartConversationRequest:\n"
         "    return _redact(StartConversationRequest)\n\n"
         "def caller(x):\n"
-        "    return _build(x)\n",   # no .post anywhere
+        "    return _build(x)\n",  # no .post anywhere
     )
     assert not any(d.kind.value == "agent_call" for d in descs)

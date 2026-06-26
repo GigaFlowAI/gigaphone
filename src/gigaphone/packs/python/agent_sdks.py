@@ -6,6 +6,7 @@ set. Contributors add entries here (or via the resolution protocol's contributio
 The sub-agent itself is a black box by ownership — we recognize the *dispatch*, never its
 internals.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -25,26 +26,51 @@ class AgentSdk:
 
 
 AGENT_SDKS: tuple[AgentSdk, ...] = (
-    AgentSdk("langgraph", "langgraph", calls=(".invoke", ".ainvoke", ".stream"),
-             packages=("langgraph",),
-             input_arg="input", output_fields=("messages",)),
-    AgentSdk("openai-agents", "openai-agents", calls=("Runner.run", "Runner.run_sync"),
-             packages=("agents",),
-             output_fields=("final_output",)),
-    AgentSdk("crewai", "crewai", calls=(".kickoff", ".kickoff_async"),
-             packages=("crewai",),
-             output_fields=("raw", "tasks_output")),
-    AgentSdk("llama-index", "llama-index", calls=(".achat", ".run"),
-             packages=("llama_index",),
-             output_fields=("response",)),
-    AgentSdk("autogen", "autogen", calls=(".initiate_chat", ".run"),
-             packages=("autogen", "autogen_agentchat"),
-             output_fields=("summary", "chat_history")),
+    AgentSdk(
+        "langgraph",
+        "langgraph",
+        calls=(".invoke", ".ainvoke", ".stream"),
+        packages=("langgraph",),
+        input_arg="input",
+        output_fields=("messages",),
+    ),
+    AgentSdk(
+        "openai-agents",
+        "openai-agents",
+        calls=("Runner.run", "Runner.run_sync"),
+        packages=("agents",),
+        output_fields=("final_output",),
+    ),
+    AgentSdk(
+        "crewai",
+        "crewai",
+        calls=(".kickoff", ".kickoff_async"),
+        packages=("crewai",),
+        output_fields=("raw", "tasks_output"),
+    ),
+    AgentSdk(
+        "llama-index",
+        "llama-index",
+        calls=(".achat", ".run"),
+        packages=("llama_index",),
+        output_fields=("response",),
+    ),
+    AgentSdk(
+        "autogen",
+        "autogen",
+        calls=(".initiate_chat", ".run"),
+        packages=("autogen", "autogen_agentchat"),
+        output_fields=("summary", "chat_history"),
+    ),
     # OpenHands: an Agent config is constructed and handed to an outbound HTTP carrier.
-    AgentSdk("openhands-sdk", "openhands-sdk",
-             constructs=("Agent", "StartConversationRequest"),
-             packages=("openhands",),
-             carriers=(".post",), output_fields=("events", "final_message")),
+    AgentSdk(
+        "openhands-sdk",
+        "openhands-sdk",
+        constructs=("Agent", "StartConversationRequest"),
+        packages=("openhands",),
+        carriers=(".post",),
+        output_fields=("events", "final_message"),
+    ),
 )
 
 

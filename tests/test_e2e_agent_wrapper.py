@@ -1,5 +1,6 @@
 """E2E: a harness wrapping a whole sub-agent (simulated openai-agents). The agent_call
 boundary is UNTRACED before GigaPhone and traced + complete + nested after."""
+
 from __future__ import annotations
 
 import os

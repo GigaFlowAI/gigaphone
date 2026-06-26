@@ -466,7 +466,7 @@ def _has_carrier(fn) -> bool:
             and isinstance(n.func, ast.Attribute)
             and n.func.attr in _CARRIER_METHODS
         ):
-                return True
+            return True
     return False
 
 

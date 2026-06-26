@@ -161,7 +161,7 @@ Pointing at files is a *scoping hint* (narrows search, raises precision), not a 
 ```yaml
 boundaries:
   - id: acme-gateway
-    kind: llm                                # llm | tool_exec | tool_result_sink
+    kind: llm                                # llm | tool_exec | tool_result_sink | agent_call
     match: { call: "our_llm.chat" }          # dotted name → generated per-language query
     input:  { arg: "messages" }
     output: { path: "response.text" }
@@ -173,6 +173,9 @@ boundaries:
     output: { paths: ["result.stdout", "result.stderr", "result.exit_code"] }  # complete result → fixes lossy_output
     emit:   { name: "acme.exec" }
 ```
+
+- `agent_call` — a call that dispatches a whole sub-agent (black box by ownership);
+  recognized via the Agent-SDK catalog (seed family B), wrapped like `tool_exec`.
 
 `match.call` (dotted name) is language-neutral and compiles to a query in each active language pack; raw tree-sitter patterns are the per-language escape hatch. Built-in anchors are a bundled default pack in the same schema; project config overrides it and is authoritative.
 

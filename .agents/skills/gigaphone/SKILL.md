@@ -27,6 +27,8 @@ make things worse. The real failure is almost never a missing decorator. It is o
 | `off_context`  | traced but off the agent's context (thread pool / executor / queue) → orphan root trace | `restore_context(...)` |
 | `lossy_output` | traced but logs only the truncated model-facing string | `map_output(...)` from complete fields |
 
+**Boundary kinds:** these modes apply to every kind — `llm`, `tool_exec`, and `agent_call` (a call that wraps a whole sub-agent; the sub-agent is a black box *by ownership*, so recognize the dispatch via the Agent-SDK catalog and trace it like `tool_exec`, with span `kind=agent`). Out of scope: instrumenting inside the sub-agent.
+
 Instrument the **in-process consumption boundary** — the layer that hands the execution
 result back to the agent's model. Treat the sandbox (subprocess/Docker/E2B/remote) as a
 black box; never try to instrument inside it.
@@ -41,6 +43,12 @@ stdlib, so just run it. Don't dump the whole pipeline at once; pause at each gat
 1. **Find the gateway.** Ask which directory holds their LLM gateway / agent loop (or grep
    for it). Run `gigaphone discover --scope <that path>` — the cheapest precise option (omit
    `--scope` to auto-crawl the whole repo).
+   If the gateway scan finds no in-process LLM call but the repo dispatches to another agent
+   framework (langgraph/crewai/openai-agents/openhands-sdk/…), discovery proposes an
+   `agent_call` boundary from the Agent-SDK catalog. If you see a dispatch that looks like a
+   sub-agent but matches no catalog entry, ask the user to confirm it (resolution protocol),
+   then offer to contribute the new signature back to `packs/python/agent_sdks.py` as an OSS
+   PR — you draft the entry with `agent_sdks.format_entry(...)`.
 2. **Confirm the boundaries.** Show the user the discovered descriptors in plain language
    ("found your gateway `X`, and 3 tools: …"). Get a yes before they're committed to
    `gigaphone.boundaries.yaml`.

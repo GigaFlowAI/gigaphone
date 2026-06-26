@@ -240,3 +240,37 @@ def test_arbitrary_agent_plus_post_without_framework_provenance_does_not_match(t
         "    return client.post('http://a/x', json={'a': a})\n",
     )
     assert not any(d.kind.value == "agent_call" for d in descs)
+
+
+def test_return_annotation_signal_catches_factory_built_dispatch(tmp_path):
+    descs = _discover_src(
+        tmp_path, "svc.py",
+        "from __future__ import annotations\n"
+        "from openhands.agent_server.models import StartConversationRequest\n"
+        "import httpx\n\n"
+        "class S:\n"
+        "    async def _build_request(self, x) -> StartConversationRequest:\n"
+        "        settings = make_settings()\n"
+        "        agent = settings.create_agent()\n"
+        "        return _redact(StartConversationRequest, agent=agent)\n"
+        "    async def _start_app_conversation(self, x):\n"
+        "        req = await self._build_request(x)\n"
+        "        return await self.httpx_client.post('http://a/api/conversations', json=req)\n",
+    )
+    agent = next((d for d in descs if d.kind.value == "agent_call"), None)
+    assert agent is not None and agent.match_call == "svc._start_app_conversation"
+    assert agent.emit_name == "svc.subagent.openhands-sdk"
+
+
+def test_return_annotation_requires_carrier(tmp_path):
+    # a builder annotated -> StartConversationRequest but with NO outbound carrier is not a dispatch
+    descs = _discover_src(
+        tmp_path, "b.py",
+        "from __future__ import annotations\n"
+        "from openhands.agent_server.models import StartConversationRequest\n\n"
+        "def _build(x) -> StartConversationRequest:\n"
+        "    return _redact(StartConversationRequest)\n\n"
+        "def caller(x):\n"
+        "    return _build(x)\n",   # no .post anywhere
+    )
+    assert not any(d.kind.value == "agent_call" for d in descs)

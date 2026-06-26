@@ -479,6 +479,30 @@ def _local_helper_bodies(fn, funcs):
     return bodies
 
 
+def _annotation_symbols(ann) -> list:
+    """Best-effort construct-candidate symbol names from a return-type annotation node,
+    descending through Optional/Awaitable/list/union wrappers."""
+    out: list = []
+    if ann is None:
+        return out
+    if isinstance(ann, ast.Name):
+        out.append(ann.id)
+    elif isinstance(ann, ast.Attribute):
+        out.append(ann.attr)
+    elif isinstance(ann, ast.Constant) and isinstance(ann.value, str):
+        out.append(ann.value.rsplit(".", 1)[-1])  # string forward-ref
+    elif isinstance(ann, ast.Subscript):
+        out += _annotation_symbols(ann.value)
+        out += _annotation_symbols(ann.slice)
+    elif isinstance(ann, ast.BinOp):  # X | None
+        out += _annotation_symbols(ann.left)
+        out += _annotation_symbols(ann.right)
+    elif isinstance(ann, ast.Tuple):
+        for e in ann.elts:
+            out += _annotation_symbols(e)
+    return out
+
+
 def _match_construct_carrier(fn, imports: dict, funcs):
     """fn carries an outbound call AND constructs a catalogued symbol (here or one hop),
     with the construct's origin resolving to that SDK's package."""
@@ -486,6 +510,7 @@ def _match_construct_carrier(fn, imports: dict, funcs):
         return None
     for body in _local_helper_bodies(fn, funcs):
         binds = _local_binds(body, imports)
+        # (a) literal construct call nodes
         for n in ast.walk(body):
             if isinstance(n, ast.Call):
                 symbol = _attr_chain(n.func).rsplit(".", 1)[-1]
@@ -493,6 +518,11 @@ def _match_construct_carrier(fn, imports: dict, funcs):
                 sdk = agent_sdks.match_construct(symbol, pkg)
                 if sdk is not None:
                     return sdk
+        # (b) return-type annotation of a one-hop helper — survives factory indirection
+        for symbol in _annotation_symbols(getattr(body, "returns", None)):
+            sdk = agent_sdks.match_construct(symbol, _root_pkg(imports.get(symbol)))
+            if sdk is not None:
+                return sdk
     return None
 
 

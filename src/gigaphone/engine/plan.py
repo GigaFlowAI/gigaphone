@@ -47,13 +47,21 @@ def build_plan(descriptors: list[Descriptor], boundaries: list[Boundary]) -> Pla
     ]
     resolved_calls = {b.call for b in boundaries}
     unresolved = [
-        Unresolved(
-            d.id,
-            d.match_call,
-            f"Could not localize `{d.match_call}` ({d.kind.value}). "
-            "Which function consumes its result and returns it to the agent loop?",
-        )
+        Unresolved(d.id, d.match_call, _question_for(d))
         for d in descriptors
         if d.match_call not in resolved_calls and d.kind != BoundaryKind.LLM
     ]
     return Plan(records=records, unresolved=unresolved)
+
+
+def _question_for(d: Descriptor) -> str:
+    if d.kind == BoundaryKind.AGENT_CALL:
+        return (
+            f"Could not localize `{d.match_call}` (agent_call). Which function dispatches "
+            "the sub-agent and returns its result? (The sub-agent itself is a black box — we "
+            "trace only this boundary.)"
+        )
+    return (
+        f"Could not localize `{d.match_call}` ({d.kind.value}). "
+        "Which function consumes its result and returns it to the agent loop?"
+    )

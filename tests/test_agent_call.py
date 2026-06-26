@@ -93,3 +93,33 @@ def test_discovery_finds_construct_then_carrier_shape(tmp_path):
     assert agent is not None
     assert agent.match_call == "service.start_conversation"
     assert agent.emit_name == "service.subagent.openhands-sdk"
+
+
+def test_unresolved_agent_call_uses_agent_wording():
+    from gigaphone.engine.plan import build_plan
+
+    desc = Descriptor(
+        id="agent-x", kind=BoundaryKind.AGENT_CALL, match_call="svc.dispatch_unknown"
+    )
+    plan = build_plan([desc], boundaries=[])  # nothing localized
+    assert len(plan.unresolved) == 1
+    assert "sub-agent" in plan.unresolved[0].question
+
+
+def test_resolution_ingests_agent_call_kind():
+    from gigaphone.engine.resolve import ingest_resolution
+
+    resolution = {
+        "resolutions": [
+            {
+                "id": "agent-x",
+                "boundary_call": "svc.dispatch",
+                "kind": "agent_call",
+                "complete_output_fields": ["final_output"],
+                "emit_name": "svc.subagent.custom",
+            }
+        ]
+    }
+    descriptors, unresolvable = ingest_resolution(resolution)
+    assert descriptors[0].kind == BoundaryKind.AGENT_CALL
+    assert unresolvable == []

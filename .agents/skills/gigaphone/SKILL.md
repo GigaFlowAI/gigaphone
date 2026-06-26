@@ -52,15 +52,31 @@ stdlib, so just run it. Don't dump the whole pipeline at once; pause at each gat
 2. **Confirm the boundaries.** Show the user the discovered descriptors in plain language
    ("found your gateway `X`, and 3 tools: …"). Get a yes before they're committed to
    `gigaphone.boundaries.yaml`.
-3. **Explain what's wrong.** Run `gigaphone plan`; summarize per tool which failure mode it
+3. **Review the proposal (recall + precision).** Deterministic discovery is high-precision
+   but not complete, and some heuristics over-fire. Read the proposed boundaries against the
+   code and adjudicate, then run `gigaphone review review.json`:
+   - **Prune false positives (precision).** For each proposed boundary, confirm it is a real
+     LLM gateway, tool execution, or sub-agent dispatch. Reject the ones that are not — e.g. a
+     singleton accessor like `get_docker_client` (returns a client object), or a pure
+     validator like `is_valid_git_branch_name` (shells out only to validate a string). Put
+     their ids in `review.json` `reject`.
+   - **Recover misses (recall).** Sweep the gateway / dispatch area for boundaries discovery
+     could not localize structurally — most importantly a sub-agent dispatch sent over a
+     transport (an `httpx`/`requests` `.post` to a remote agent-server, a config built via a
+     factory then serialized). Add each as a descriptor in `review.json` `add` with
+     `kind: agent_call`, the enclosing function as `match_call`, and the complete-result
+     fields as `output_paths`.
+   - The result is committed to `gigaphone.boundaries.yaml`, so CI replays it deterministically
+     — the model is in the loop only here, at authoring/change time.
+4. **Explain what's wrong.** Run `gigaphone plan`; summarize per tool which failure mode it
    has (untraced / off_context / lossy_output) and what the fix will do.
-4. **Show the diffs.** Run `gigaphone fix` (without `--apply` to preview, then `--apply`);
+5. **Show the diffs.** Run `gigaphone fix` (without `--apply` to preview, then `--apply`);
    present each codemod as a reviewable diff and get approval before applying. The edits are
    idempotent — re-running changes nothing.
-5. **Prove it.** Run `gigaphone verify`; report the result ("3/3 tool spans now nested +
+6. **Prove it.** Run `gigaphone verify`; report the result ("3/3 tool spans now nested +
    complete") and the trace link. If anything is still ✗, say so — never claim coverage
    without verify.
-6. **Wrap up.** Tell them to commit `gigaphone.boundaries.yaml` so future/CI runs are
+7. **Wrap up.** Tell them to commit `gigaphone.boundaries.yaml` so future/CI runs are
    deterministic, and that the post-edit hook will flag any newly-added untraced tool.
 
 The engine is pure stdlib and runs on a bare `python3` — no install step; just invoke it.
@@ -94,6 +110,10 @@ precise option. Then:
    fields for `tool_exec` — e.g. `stdout`, `stderr`, `exit_code`), `emit.name`.
 4. The engine validates against the schema and **re-prompts you on any mismatch** — fix
    and resubmit. Present the descriptors to the user to confirm before they're committed.
+
+   review.json shape: `{ "reject": ["<descriptor id>", ...], "add": [ { "id", "kind",
+   "match_call", "input_arg"?, "output_paths"?, "emit_name"? }, ... ] }`. Anything not rejected
+   is kept.
 
 ## Resolution protocol (the ambiguous ~20%)
 

@@ -179,7 +179,18 @@ boundaries:
 
 `match.call` (dotted name) is language-neutral and compiles to a query in each active language pack; raw tree-sitter patterns are the per-language escape hatch. Built-in anchors are a bundled default pack in the same schema; project config overrides it and is authoritative.
 
-### 8.5 Drift
+### 8.5 Bidirectional harness review
+
+Deterministic discovery is the high-precision proposer, but it is not complete: dispatches
+built through factories, generic builders, or cross-module indirection are invisible to
+structural matching, and some heuristics over-fire. The bidirectional harness review
+(`gigaphone review`) is the high-recall + precision-audit pass: the harness (the reasoning
+engine, ADR-0006) reads the proposed boundaries against the code, rejects false positives,
+and adds missed boundaries; the result is written to the committed `gigaphone.boundaries.yaml`
+as data (ADR-0004), so routine and CI runs replay it deterministically — the model is the
+reasoning engine only at authoring/change time (see ADR-0009).
+
+### 8.6 Drift
 
 The committed config is checked against the codebase on each run; when discovery anchors no longer resolve (gateway moved/renamed, new provider added), GigaPhone flags drift and re-triggers Phase A for just the affected area. Discovery becomes an occasional, change-triggered step rather than a per-run cost.
 

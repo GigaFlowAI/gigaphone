@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import shutil
 import sys
-import tomllib  # noqa: F401  (kept for symmetry / future round-trip checks)
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent

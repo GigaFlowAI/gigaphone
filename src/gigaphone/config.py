@@ -9,8 +9,7 @@ from __future__ import annotations
 
 import os
 
-import yaml
-
+from gigaphone import _yaml
 from gigaphone.core.model import Descriptor
 
 CONFIG_NAME = "gigaphone.boundaries.yaml"
@@ -25,7 +24,7 @@ def load(repo: str) -> list[Descriptor]:
     if not os.path.exists(path):
         return []
     with open(path, encoding="utf-8") as fh:
-        data = yaml.safe_load(fh) or {}
+        data = _yaml.load(fh.read())
     return [Descriptor.from_yaml_obj(o) for o in data.get("boundaries", [])]
 
 
@@ -35,10 +34,11 @@ def save(repo: str, descriptors: list[Descriptor]) -> str:
     header = (
         "# GigaPhone boundary config (DESIGN §8.4) — the fourth axis as data, not code.\n"
         "# Produced by discovery; consumed deterministically by routine/CI runs.\n"
+        "# Leaf mappings use flow style `{ key: value }` (parsed dependency-free).\n"
     )
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(header)
-        yaml.safe_dump(doc, fh, sort_keys=False, default_flow_style=False)
+        fh.write(_yaml.dump(doc))
     return path
 
 

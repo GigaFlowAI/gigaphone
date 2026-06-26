@@ -3,20 +3,22 @@ name = "gigaphone"
 version = "0.5.0"
 description = "Trace-coverage instrumentation for AI agent codebases — neutral across harness, language, vendor, and codebase."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.9"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Gigaflow" }]
-dependencies = [
-    "pyyaml>=6",            # boundary-config load/save (ADR-0004)
-    "opentelemetry-sdk>=1.20",  # generic OTel backend adapter: emit + in-process verify (DESIGN §9)
-    # The Python language pack uses the stdlib `ast` module (ADR-0007) — no extra dep.
-    # tree-sitter remains the cross-language substrate for packs that need it (e.g. TS).
-]
+# ZERO third-party runtime dependencies — the engine is pure stdlib so the plugin runs on a
+# bare `python3` (Python 3.9+, e.g. Apple's system interpreter) with no pip/uv/venv. The
+# config is read/written by the vendored `gigaphone._yaml`; the Python pack uses stdlib
+# `ast` (ADR-0007). opentelemetry/braintrust/langsmith belong to the *customer's* app, not
+# the engine — they're only needed by the test fixtures below.
+dependencies = []
 
 [project.optional-dependencies]
 dev = [
     "ruff>=0.6",
     "pytest>=8",
+    "opentelemetry-sdk>=1.20",  # the testclient + e2e verify exercise a real OTel app
+    "pyyaml>=6",                # cross-check the vendored _yaml against PyYAML in tests
 ]
 
 [project.scripts]
@@ -34,7 +36,7 @@ packages = ["src/gigaphone"]
 [tool.ruff]
 src = ["src", "tests"]
 line-length = 100
-target-version = "py311"
+target-version = "py39"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]

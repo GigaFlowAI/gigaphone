@@ -40,8 +40,12 @@ def test_claude_plugin_uses_autoloaded_conventions():
     # Declaring them in plugin.json too is a duplicate that fails to load (caught at install).
     pj = render_claude_code()["plugin.json"]
     assert "hooks" not in pj and "skills" not in pj and "mcpServers" not in pj
-    # the engine is launched from the cloned plugin via uv — no separate install step
-    assert PLUGIN["mcp_server"]["args"][:3] == ["run", "--project", "${CLAUDE_PLUGIN_ROOT}"]
+    # the engine launches as a bare python3 with PYTHONPATH at the cloned source — zero
+    # third-party deps, no pip/uv/venv
+    mcp = PLUGIN["mcp_server"]
+    assert mcp["command"] == "python3"
+    assert mcp["args"] == ["-m", "gigaphone.mcp.server"]
+    assert mcp["env"]["PYTHONPATH"] == "${CLAUDE_PLUGIN_ROOT}/src"
 
 
 def test_codex_runs_command_only_hooks():

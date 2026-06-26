@@ -31,7 +31,30 @@ Instrument the **in-process consumption boundary** — the layer that hands the 
 result back to the agent's model. Treat the sandbox (subprocess/Docker/E2B/remote) as a
 black box; never try to instrument inside it.
 
-## Workflow
+## Guided onboarding — walk the user through this
+
+When the user wants to onboard their codebase (or reports lost/truncated/detached tool
+spans), guide them step by step and run the engine **on demand** via the MCP tools the
+plugin exposes (`discover`, `plan`, `fix`, `verify`) — or the equivalent CLI. Don't dump
+the whole pipeline at once; pause at each gate.
+
+1. **Find the gateway.** Ask which directory holds their LLM gateway / agent loop (or grep
+   for it). Call `discover` with `scope` set to that path — the cheapest precise option.
+2. **Confirm the boundaries.** Show the user the discovered descriptors in plain language
+   ("found your gateway `X`, and 3 tools: …"). Get a yes before they're committed to
+   `gigaphone.boundaries.yaml`.
+3. **Explain what's wrong.** Call `plan`; summarize per tool which failure mode it has
+   (untraced / off_context / lossy_output) and what the fix will do.
+4. **Show the diffs.** Call `fix`; present each codemod as a reviewable diff and get
+   approval before applying. The edits are idempotent — re-running changes nothing.
+5. **Prove it.** Call `verify`; report the result ("3/3 tool spans now nested + complete")
+   and the trace link. If anything is still ✗, say so — never claim coverage without verify.
+6. **Wrap up.** Tell them to commit `gigaphone.boundaries.yaml` so future/CI runs are
+   deterministic, and that the post-edit hook will flag any newly-added untraced tool.
+
+The engine is pure stdlib and runs on a bare `python3` — no install step; just invoke it.
+
+## Workflow (the verbs behind the steps)
 
 ```
 gigaphone discover [--scope PATH]   you fulfill the Discovery protocol → boundary descriptors

@@ -1,13 +1,14 @@
 {
   "mcpServers": {
     "gigaphone": {
-      "command": "uv",
+      "command": "python3",
       "args": [
-        "run",
-        "--project",
-        "${CLAUDE_PLUGIN_ROOT}",
-        "gigaphone-mcp"
-      ]
+        "-m",
+        "gigaphone.mcp.server"
+      ],
+      "env": {
+        "PYTHONPATH": "${CLAUDE_PLUGIN_ROOT}/src"
+      }
     }
   }
 }

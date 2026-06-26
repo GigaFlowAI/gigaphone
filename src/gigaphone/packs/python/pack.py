@@ -111,7 +111,7 @@ class PythonPack(LanguagePack):
                 continue
             if not all(isinstance(k, ast.Constant) for k in assign.value.keys):
                 continue
-            for k, v in zip(assign.value.keys, assign.value.values, strict=False):
+            for k, v in zip(assign.value.keys, assign.value.values):  # noqa: B905 (py39: no strict=)
                 fn = _attr_chain(v)
                 if not fn or "." in fn:
                     continue

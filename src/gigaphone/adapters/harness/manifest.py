@@ -23,13 +23,18 @@ DESCRIPTION = (
     "neutral across harness, language, vendor, and codebase."
 )
 
-# The engine is launched from the cloned plugin via uv, so installing the plugin needs no
-# separate `pip install` (only uv on PATH). ${CLAUDE_PLUGIN_ROOT} is the plugin dir (= repo
-# root); ${CLAUDE_PROJECT_DIR} is the user's project where the hook should run.
-_MCP_COMMAND = "uv"
-_MCP_ARGS = ["run", "--project", "${CLAUDE_PLUGIN_ROOT}", "gigaphone-mcp"]
+# The engine is pure stdlib (zero third-party deps), so the plugin launches a bare
+# `python3` (3.9+, e.g. Apple's system interpreter) with PYTHONPATH at the cloned source —
+# no pip/uv/venv. ${CLAUDE_PLUGIN_ROOT} is the plugin dir (= repo root); ${CLAUDE_PROJECT_DIR}
+# is the user's project where the hook runs.
+_PYTHONPATH = "${CLAUDE_PLUGIN_ROOT}/src"
+_MCP_SERVER = {
+    "command": "python3",
+    "args": ["-m", "gigaphone.mcp.server"],
+    "env": {"PYTHONPATH": _PYTHONPATH},
+}
 _HOOK_COMMAND = (
-    'uv run --project "${CLAUDE_PLUGIN_ROOT}" gigaphone detect '
+    f'PYTHONPATH="{_PYTHONPATH}" python3 -m gigaphone.cli detect '
     '--repo "${CLAUDE_PROJECT_DIR}" || true'
 )
 
@@ -38,7 +43,7 @@ PLUGIN: dict[str, Any] = {
     "name": NAME,
     "version": VERSION,
     "description": DESCRIPTION,
-    "mcp_server": {"command": _MCP_COMMAND, "args": _MCP_ARGS},
+    "mcp_server": _MCP_SERVER,
     "hook_command": _HOOK_COMMAND,
 }
 

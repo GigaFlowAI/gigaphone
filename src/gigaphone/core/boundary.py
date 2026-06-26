@@ -7,10 +7,18 @@ no harness, language, vendor, or codebase.
 
 from __future__ import annotations
 
-from enum import StrEnum
+from enum import Enum
 
 
-class BoundaryKind(StrEnum):
+# str-mixin enum (not enum.StrEnum) so the engine runs on Python 3.9+ — the system
+# `python3` on many machines (e.g. Apple's 3.9) — with zero dependencies. `.value` gives
+# the wire string; members compare equal to their string value.
+class _StrEnum(str, Enum):
+    def __str__(self) -> str:  # match StrEnum: str(member) == member.value
+        return self.value
+
+
+class BoundaryKind(_StrEnum):
     """What a boundary *is* (DESIGN §8.4 ``kind``)."""
 
     LLM = "llm"  # the gateway call that talks to the model
@@ -18,7 +26,7 @@ class BoundaryKind(StrEnum):
     TOOL_RESULT_SINK = "tool_result_sink"  # where the result is written back into the message list
 
 
-class FailureMode(StrEnum):
+class FailureMode(_StrEnum):
     """Why a tool result fails to land nested + complete. Only the fix primitive differs
     across axes; the mode itself is invariant (DESIGN §10)."""
 
@@ -28,7 +36,7 @@ class FailureMode(StrEnum):
     LOSSY_OUTPUT = "lossy_output"  # traced but logs only the truncated model-facing string
 
 
-class Source(StrEnum):
+class Source(_StrEnum):
     """How a boundary was found (plan-record provenance, DESIGN §11)."""
 
     ANCHOR = "anchor"  # built-in anchor catalog

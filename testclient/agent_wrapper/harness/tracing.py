@@ -1,5 +1,4 @@
-"""Customer observability wiring — honours $GIGAPHONE_SPAN_FILE, one JSON line per span
-(identical read path to testclient/app/tracing.py)."""
+"""Customer observability wiring — honours $GIGAPHONE_SPAN_FILE, one JSON line per span."""
 from __future__ import annotations
 
 import json
@@ -49,4 +48,4 @@ def init_tracing() -> None:
 
 def tracer():
     init_tracing()
-    return trace.get_tracer("wrapper")
+    return trace.get_tracer("harness")

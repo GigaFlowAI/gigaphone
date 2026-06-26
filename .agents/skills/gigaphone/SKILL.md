@@ -29,6 +29,8 @@ make things worse. The real failure is almost never a missing decorator. It is o
 | `off_context`  | traced but off the agent's context (thread pool / executor / queue) → orphan root trace | `restore_context(...)` |
 | `lossy_output` | traced but logs only the truncated model-facing string | `map_output(...)` from complete fields |
 
+**Boundary kinds:** these modes apply to every kind — `llm`, `tool_exec`, and `agent_call` (a call that wraps a whole sub-agent; the sub-agent is a black box *by ownership*, so recognize the dispatch via the Agent-SDK catalog and trace it like `tool_exec`, with span `kind=agent`). Out of scope: instrumenting inside the sub-agent.
+
 Instrument the **in-process consumption boundary** — the layer that hands the execution
 result back to the agent's model. Treat the sandbox (subprocess/Docker/E2B/remote) as a
 black box; never try to instrument inside it.
@@ -51,20 +53,46 @@ stdlib, so just run it. Don't dump the whole pipeline at once; pause at each gat
 1. **Find the gateway.** Ask which directory holds their LLM gateway / agent loop (or grep
    for it). Run `gigaphone discover --scope <that path>` — the cheapest precise option (omit
    `--scope` to auto-crawl the whole repo).
+   If the gateway scan finds no in-process LLM call but the repo dispatches to another agent
+   framework (langgraph/crewai/openai-agents/openhands-sdk/…), discovery proposes an
+   `agent_call` boundary from the Agent-SDK catalog. If you see a dispatch that looks like a
+   sub-agent but matches no catalog entry, ask the user to confirm it (resolution protocol),
+   then offer to contribute the new signature back to `packs/python/agent_sdks.py` as an OSS
+   PR — you draft the entry with `agent_sdks.format_entry(...)`.
 2. **Confirm the boundaries.** Show the user the discovered descriptors in plain language
    ("found your gateway `X`, and 3 tools: …"). Get a yes before they're committed to
    `gigaphone.boundaries.yaml`.
-3. **Explain what's wrong.** Run `gigaphone plan`; summarize per boundary (LLM gateway +
+3. **Review the proposal (recall + precision).** Deterministic discovery is high-precision
+   but not complete, and some heuristics over-fire. Read the proposed boundaries against the
+   code and adjudicate, then run `gigaphone review review.json`:
+   - **Prune false positives (precision).** For each proposed boundary, confirm it is a real
+     LLM gateway, tool execution, or sub-agent dispatch. Reject the ones that are not — e.g. a
+     singleton accessor like `get_docker_client` (returns a client object), or a pure
+     validator like `is_valid_git_branch_name` (shells out only to validate a string). Put
+     their ids in `review.json` `reject`.
+   - **Recover misses (recall).** Sweep the gateway / dispatch area for boundaries discovery
+     could not localize structurally — most importantly a sub-agent dispatch sent over a
+     transport (an `httpx`/`requests` `.post` to a remote agent-server, a config built via a
+     factory then serialized). Add each as a descriptor in `review.json` `add` with
+     `kind: agent_call`, the enclosing function as `match_call`, and the complete-result
+     fields as `output_paths`. `output_paths` are the field names the boundary's call returns
+     that should become span attributes — for a tool exec typically `stdout`, `stderr`,
+     `exit_code`; for a sub-agent dispatch the fields of its result object such as `events` or
+     `final_message` (read the dispatch/return type to pick them); they land as
+     `gigaphone.output.<field>` attributes on the span.
+   - The result is committed to `gigaphone.boundaries.yaml`, so CI replays it deterministically
+     — the model is in the loop only here, at authoring/change time.
+4. **Explain what's wrong.** Run `gigaphone plan`; summarize per boundary (LLM gateway +
    each tool) which failure mode it has (untraced / off_context / lossy_output) and what
    the fix does.
-4. **Show the diffs.** Run `gigaphone fix` (without `--apply` to preview, then `--apply`);
+5. **Show the diffs.** Run `gigaphone fix` (without `--apply` to preview, then `--apply`);
    present each codemod as a reviewable diff and get approval before applying. The edits are
    idempotent — re-running changes nothing.
-5. **Prove it end-to-end.** Run `gigaphone verify`; it runs a full agent turn and proves
+6. **Prove it end-to-end.** Run `gigaphone verify`; it runs a full agent turn and proves
    **one coherent trace tree** — a single agent root with every LLM and tool span nested +
    complete, and each requested tool causally linked to its span. If anything is still ✗
    (orphan, missing convention, broken linkage), say so — never claim coverage without verify.
-6. **Wrap up.** `verify`/`onboard` also writes `docs/gigaphone/report.md` (problems +
+7. **Wrap up.** `verify`/`onboard` also writes `docs/gigaphone/report.md` (problems +
    changes + verification) and `docs/gigaphone/architecture.md` (the integrated telemetry
    architecture). Tell them to commit those plus `gigaphone.boundaries.yaml` so future/CI
    runs are deterministic, and that the post-edit hook will flag any newly-added untraced
@@ -101,6 +129,13 @@ precise option. Then:
    fields for `tool_exec` — e.g. `stdout`, `stderr`, `exit_code`), `emit.name`.
 4. The engine validates against the schema and **re-prompts you on any mismatch** — fix
    and resubmit. Present the descriptors to the user to confirm before they're committed.
+
+   review.json shape: `{ "reject": ["<descriptor id>", ...], "add": [ { "id", "kind",
+   "match_call", "input_arg"?, "output_paths"?, "emit_name"? }, ... ] }`. Anything not rejected
+   is kept. `match_call` in `review.json` corresponds to `match: {call: ...}` in the committed
+   yaml — the engine translates the flat key to the nested form. If `emit_name` is omitted the
+   engine derives a span name from the boundary; for an added sub-agent dispatch prefer an
+   explicit name like `<project>.subagent.<framework>` so the span reads clearly.
 
 ## Resolution protocol (the ambiguous ~20%)
 

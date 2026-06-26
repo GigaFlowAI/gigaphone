@@ -74,7 +74,8 @@ class OtelAdapter(BackendAdapter):
         if mode == FailureMode.UNTRACED:
             name = boundary.emit_name or f"{boundary.provider_or_framework}.{boundary.func_name}"
             fields = ", ".join(repr(f) for f in boundary.complete_output_fields)
-            decorator = f'gigaphone_trace(name="{name}", kind="tool", output=[{fields}])'
+            span_kind = "agent" if boundary.kind == BoundaryKind.AGENT_CALL else "tool"
+            decorator = f'gigaphone_trace(name="{name}", kind="{span_kind}", output=[{fields}])'
             return FixPrimitive(
                 failure_mode=mode,
                 backend_id=self.id,

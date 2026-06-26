@@ -13,6 +13,7 @@ from gigaphone.core.boundary import BoundaryKind, FailureMode, Source
 from gigaphone.core.model import Boundary, CodeEdit, Descriptor, FixPrimitive, Hunk, Range
 from gigaphone.core.source import SourceMap
 from gigaphone.interfaces.language_pack import LanguagePack
+from gigaphone.packs.python import agent_sdks
 
 # --- built-in anchor catalog (DESIGN §7.1) -------------------------------------------
 # Execution sinks: trace the wrapping function, never inside (DESIGN §3). Matched on the
@@ -190,6 +191,24 @@ class PythonPack(LanguagePack):
                         emit_name=f"{_proj(module)}.{name}",
                     )
                 )
+
+        # 4) agent-SDK dispatch (seed family B), provenance-gated. Private methods included —
+        #    real dispatches (e.g. _start_app_conversation) are private.
+        for name, fn in funcs.by_name.items():
+            if name.startswith("__"):
+                continue
+            sdk = _match_direct(fn, imports) or _match_construct_carrier(fn, imports, funcs)
+            if sdk is not None and not any(d.match_call.endswith(f".{name}") for d in out):
+                out.append(
+                    Descriptor(
+                        id=f"agent-{name}",
+                        kind=BoundaryKind.AGENT_CALL,
+                        match_call=f"{module}.{name}",
+                        input_arg=sdk.input_arg,
+                        output_paths=list(sdk.output_fields),
+                        emit_name=f"{_proj(module)}.subagent.{sdk.framework}",
+                    )
+                )
         return _dedupe(out)
 
     # ------------------------------------------------------------- localization (Phase B)
@@ -231,7 +250,11 @@ class PythonPack(LanguagePack):
             call=d.match_call,
             range=rng,
             complete_output_fields=list(d.output_paths),
-            tools_covered=[d.id.replace("tool-", "")] if d.kind == BoundaryKind.TOOL_EXEC else [],
+            tools_covered=(
+                [d.id.split("-", 1)[-1]]
+                if d.kind in (BoundaryKind.TOOL_EXEC, BoundaryKind.AGENT_CALL)
+                else []
+            ),
             provider_or_framework=_proj(module),
             source=Source.SPEC,
         )
@@ -240,7 +263,10 @@ class PythonPack(LanguagePack):
         b.llm_messages_arg = d.input_arg
 
         # complete output fields: infer from the return type if the descriptor didn't say.
-        if not b.complete_output_fields and d.kind == BoundaryKind.TOOL_EXEC:
+        if not b.complete_output_fields and d.kind in (
+            BoundaryKind.TOOL_EXEC,
+            BoundaryKind.AGENT_CALL,
+        ):
             b.complete_output_fields = _infer_output_fields(fn, funcs)
 
         # already fixed by a decorator (idempotent) -> covered, but record the span name +
@@ -504,6 +530,120 @@ def _wraps_exec_sink(fn: ast.FunctionDef) -> bool:
             if dotted in _EXEC_CALL_EXACT or dotted.startswith(_EXEC_CALL_PREFIXES):
                 return True
     return False
+
+
+def _origin(expr, binds: dict, imports: dict):
+    """Best-effort origin (dotted) of an expression, stdlib-ast only."""
+    if isinstance(expr, ast.Name):
+        return binds.get(expr.id) or imports.get(expr.id)
+    if isinstance(expr, ast.Call):
+        return _origin(expr.func, binds, imports)
+    if isinstance(expr, ast.Attribute):
+        base = _origin(expr.value, binds, imports)
+        return f"{base}.{expr.attr}" if base else None
+    return None
+
+
+def _root_pkg(origin):
+    return origin.split(".")[0] if origin else None
+
+
+def _local_binds(fn, imports: dict) -> dict:
+    """Map locally-assigned names to their origin (var = Constructor(...) / import alias)."""
+    binds: dict = {}
+    for n in ast.walk(fn):
+        if isinstance(n, ast.Assign) and isinstance(n.value, (ast.Call, ast.Name, ast.Attribute)):
+            origin = _origin(n.value, binds, imports)
+            if origin:
+                for t in n.targets:
+                    if isinstance(t, ast.Name):
+                        binds[t.id] = origin
+    return binds
+
+
+def _match_direct(fn, imports: dict):
+    """A method call whose receiver resolves to a catalogued SDK package."""
+    binds = _local_binds(fn, imports)
+    for n in ast.walk(fn):
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute):
+            pkg = _root_pkg(_origin(n.func.value, binds, imports))
+            sdk = agent_sdks.match_package_method(pkg, n.func.attr)
+            if sdk is not None:
+                return sdk
+    return None
+
+
+_CARRIER_METHODS = agent_sdks.carrier_methods()
+
+
+def _has_carrier(fn) -> bool:
+    for n in ast.walk(fn):
+        if (
+            isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Attribute)
+            and n.func.attr in _CARRIER_METHODS
+        ):
+            return True
+    return False
+
+
+def _local_helper_bodies(fn, funcs):
+    """fn plus one hop into any locally-defined function fn calls."""
+    bodies = [fn]
+    for n in ast.walk(fn):
+        if isinstance(n, ast.Call):
+            tail = _attr_chain(n.func).rsplit(".", 1)[-1]
+            helper = funcs.by_name.get(tail)
+            if helper is not None and helper is not fn:
+                bodies.append(helper)
+    return bodies
+
+
+def _annotation_symbols(ann) -> list:
+    """Best-effort construct-candidate symbol names from a return-type annotation node,
+    descending through Optional/Awaitable/list/union wrappers."""
+    out: list = []
+    if ann is None:
+        return out
+    if isinstance(ann, ast.Name):
+        out.append(ann.id)
+    elif isinstance(ann, ast.Attribute):
+        out.append(ann.attr)
+    elif isinstance(ann, ast.Constant) and isinstance(ann.value, str):
+        out.append(ann.value.rsplit(".", 1)[-1])  # string forward-ref
+    elif isinstance(ann, ast.Subscript):
+        out += _annotation_symbols(ann.value)
+        out += _annotation_symbols(ann.slice)
+    elif isinstance(ann, ast.BinOp):  # X | None
+        out += _annotation_symbols(ann.left)
+        out += _annotation_symbols(ann.right)
+    elif isinstance(ann, ast.Tuple):
+        for e in ann.elts:
+            out += _annotation_symbols(e)
+    return out
+
+
+def _match_construct_carrier(fn, imports: dict, funcs):
+    """fn carries an outbound call AND constructs a catalogued symbol (here or one hop),
+    with the construct's origin resolving to that SDK's package."""
+    if not _has_carrier(fn):
+        return None
+    for body in _local_helper_bodies(fn, funcs):
+        binds = _local_binds(body, imports)
+        # (a) literal construct call nodes
+        for n in ast.walk(body):
+            if isinstance(n, ast.Call):
+                symbol = _attr_chain(n.func).rsplit(".", 1)[-1]
+                pkg = _root_pkg(_origin(n.func, binds, imports))
+                sdk = agent_sdks.match_construct(symbol, pkg)
+                if sdk is not None:
+                    return sdk
+        # (b) return-type annotation of a one-hop helper — survives factory indirection
+        for symbol in _annotation_symbols(getattr(body, "returns", None)):
+            sdk = agent_sdks.match_construct(symbol, _root_pkg(imports.get(symbol)))
+            if sdk is not None:
+                return sdk
+    return None
 
 
 def _with_span_var(span_with: ast.With) -> str | None:

@@ -35,7 +35,7 @@ def render(
     verify_results: list[VerifyResult],
     trace_link: str | None = None,
 ) -> str:
-    tools = [r for r in plan.records if r.kind.value == "tool_exec"]
+    boundaries = [r for r in plan.records if r.kind.value in ("tool_exec", "agent_call")]
     counts = {m: 0 for m in FailureMode}
     for r in plan.records:
         for m in r.failure_modes:
@@ -43,7 +43,7 @@ def render(
     verified = sum(1 for v in verify_results if v.ok)
     parts = [
         f"Harness: {harness} · Language: {language} · Backend: {backend}",
-        f"{len(tools)} tools · "
+        f"{len(boundaries)} boundaries · "
         f"{counts[FailureMode.UNTRACED]} untraced · "
         f"{counts[FailureMode.OFF_CONTEXT]} off-context · "
         f"{counts[FailureMode.LOSSY_OUTPUT]} lossy"

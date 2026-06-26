@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>agent_call discovery — why it breaks on real OpenHands</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: "neutral", flowchart: { useMaxWidth: true } });
+</script>
+<style>
+  :root { --fg:#1b1f24; --muted:#5b6570; --bad:#b3261e; --good:#1e7d32; --line:#e2e6ea; --accent:#0b5fff; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+         color: var(--fg); max-width: 920px; margin: 0 auto; padding: 32px 24px 80px; line-height: 1.55; }
+  h1 { font-size: 26px; margin-bottom: 4px; }
+  h2 { font-size: 20px; margin-top: 44px; border-bottom: 2px solid var(--line); padding-bottom: 6px; }
+  h3 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-top: 28px; }
+  .sub { color: var(--muted); margin-top: 0; }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; margin: 18px 0; background: #fff; }
+  .bad { color: var(--bad); font-weight: 600; }
+  .good { color: var(--good); font-weight: 600; }
+  pre { background: #0d1117; color: #e6edf3; border-radius: 8px; padding: 14px 16px; overflow-x: auto;
+        font-size: 12.5px; line-height: 1.5; }
+  code { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; }
+  p code, li code { background: #f0f2f5; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+  .mermaid { display: flex; justify-content: center; margin: 10px 0 6px; }
+  .tag { display:inline-block; font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; vertical-align:middle; }
+  .tag.a { background:#fde8e6; color:var(--bad); }
+  .tag.b { background:#e7f0ff; color:var(--accent); }
+  .legend { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; margin: 12px 0; }
+  th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #f6f8fa; }
+  .takeaway { background: #fff8e6; border:1px solid #f3e2a8; border-radius:10px; padding:14px 18px; }
+</style>
+</head>
+<body>
+
+<h1>Why <code>agent_call</code> discovery breaks on real OpenHands</h1>
+<p class="sub">All 43 synthetic tests pass — but the implementation-blind tester found two real-world defects. This explains the mechanics of each.</p>
+
+<h2>The model in one line</h2>
+<p>GigaPhone scans each function and asks: <em>does this function dispatch a sub-agent?</em> It says “yes” in two ways:</p>
+<ul>
+  <li><strong>Direct call</strong> — the body contains a known agent-SDK call signature (e.g. <code>Runner.run</code>, <code>.invoke</code>, <code>.run</code>).</li>
+  <li><strong>Construct → carrier</strong> — the body both <em>constructs</em> a known agent config object (<code>Agent(...)</code>, <code>StartConversationRequest(...)</code>) <em>and</em> calls an outbound <em>carrier</em> (<code>.post(...)</code>).</li>
+</ul>
+<p>Both checks look at <strong>one function at a time</strong>, matching on the <strong>method name</strong>. That is exactly where it breaks.</p>
+
+<!-- ============================ DEFECT A ============================ -->
+<h2><span class="tag a">Defect A</span> &nbsp;False positives — it matches a method <em>name</em>, not a <em>type</em></h2>
+
+<p>The catalog gave <code>llama-index</code> the signatures <code>calls = (".achat", ".run")</code>. A leading-dot signature matches <em>any</em> call whose dotted name ends in <code>.run</code>:</p>
+
+<pre><code># match_call_site(dotted)
+if sig.startswith("."):
+    if dotted.endswith(sig):      # ".run"  →  matches  asyncio.run, subprocess.run, x.run ...
+        return sdk                # → tags the enclosing function as agent_call (llama-index)</code></pre>
+
+<div class="card">
+<div class="mermaid">
+flowchart TD
+    A1["asyncio.run(coro)"] --> Q
+    A2["subprocess.run(cmd)"] --> Q
+    A3["containers.run(img)"] --> Q
+    A4["pool.run(job)"] --> Q
+    Q{"dotted.endswith('.run') ?"}
+    Q -->|"yes (every one)"| HIT["MATCH llama-index<br/>tag enclosing fn as agent_call"]
+    HIT --> FP["async_utils.run, call_async_from_sync,<br/>sandbox.start_sandbox = FALSE POSITIVES"]
+    style HIT fill:#fde8e6,stroke:#b3261e
+    style FP fill:#fde8e6,stroke:#b3261e,color:#b3261e
+</div>
+<p class="legend">The matcher has no idea what object <code>.run</code> is called on. <code>asyncio.run</code>, <code>subprocess.run</code>, <code>containers.run</code> all look identical to it — and <code>.run</code> / <code>.invoke</code> / <code>.stream</code> are among the most common method names in Python.</p>
+</div>
+
+<p><strong>Why the tests missed it:</strong> Task 3’s fixture used the <em>qualified two-part</em> signature <code>Runner.run</code> (precise — the receiver <code>Runner</code> is named). No synthetic test had a function that <em>incidentally</em> calls some unrelated <code>.run</code>. The fixture was a clean room; OpenHands is full of incidental <code>.run</code> calls.</p>
+
+<!-- ============================ DEFECT B ============================ -->
+<h2><span class="tag b">Defect B</span> &nbsp;The real dispatch is missed — the matcher sees one function at a time</h2>
+
+<p>The construct→carrier check fires only if <strong>one</strong> function body contains <strong>both</strong> a construct and a carrier. OpenHands splits those two steps across a helper call:</p>
+
+<div class="card">
+<div class="mermaid">
+flowchart TB
+    subgraph P["_start_app_conversation()  ·  line 460"]
+        P1["req = _build_..._for_user(...)<br/>construct hidden behind the call ✗"]
+        P2["httpx.post('/api/conversations', json=req)<br/>CARRIER ✓"]
+    end
+    subgraph B["_build_start_conversation_request_for_user()  ·  line 1511"]
+        B1["req = StartConversationRequest( Agent(...) )<br/>CONSTRUCT ✓"]
+        B2["return req"]
+    end
+    P1 -. "calls" .-> B
+    P --> MP["scan poster: carrier ✓, construct ✗ → no match"]
+    B --> MB["scan builder: construct ✓, carrier ✗ → no match"]
+    MP --> MISS["neither function has BOTH<br/>→ DISPATCH MISSED, not even flagged"]
+    MB --> MISS
+    style P2 fill:#e7f0ff,stroke:#0b5fff
+    style B1 fill:#e7f0ff,stroke:#0b5fff
+    style MISS fill:#fde8e6,stroke:#b3261e,color:#b3261e
+</div>
+<p class="legend">The poster owns the <code>.post</code> carrier; the builder owns the <code>StartConversationRequest</code> construct. The matcher walks <strong>one function</strong>, so it sees only half the signal in each — and a call boundary sits between them.</p>
+</div>
+
+<h3>Contrast: why the Task 4 fixture passed</h3>
+<div class="card">
+<div class="mermaid">
+flowchart TB
+    subgraph G["synthetic fixture: start_conversation()  ·  ONE function"]
+        G1["agent = Agent(...)<br/>CONSTRUCT ✓"]
+        G2["client.post('/api/conversations', json=agent)<br/>CARRIER ✓"]
+    end
+    G --> GM["same function has BOTH → MATCH ✓<br/>(test goes green)"]
+    style GM fill:#e6f4ea,stroke:#1e7d32,color:#1e7d32
+</div>
+<p class="legend">The fixture put build + post in the <em>same</em> function. Real layered services factor the builder into a helper — so the fixture never exercised the cross-function case.</p>
+</div>
+
+<!-- ============================ ROOT CAUSE ============================ -->
+<h2>The common root cause</h2>
+<div class="takeaway">
+Both defects are the same shape: <strong>the synthetic fixtures were too clean.</strong> They used precise qualified names (no incidental <code>.run</code>) and same-function shapes (no factored helpers). Real code is noisy and layered — so the matcher both <span class="bad">over-fires</span> (Defect A) and <span class="bad">under-fires</span> (Defect B).
+</div>
+
+<table>
+  <tr><th></th><th>Synthetic fixture (passed)</th><th>Real OpenHands (broke)</th></tr>
+  <tr><td><strong>Direct match</strong></td><td><code>Runner.run</code> — qualified, precise</td><td><code>asyncio.run</code>, <code>containers.run</code> — incidental <code>.run</code> → false positives</td></tr>
+  <tr><td><strong>Construct→carrier</strong></td><td><code>Agent(...)</code> + <code>.post</code> in ONE function</td><td>construct in builder (l.1511), <code>.post</code> in poster (l.460) → missed</td></tr>
+</table>
+
+<h3>Why the precision fix ripples into the fixtures</h3>
+<p>The natural fix for Defect A is <em>provenance</em>: only match <code>.run</code> if its receiver actually came from the framework’s package. But the test fixtures import <strong>fake</strong> modules (<code>from wrapper.subagent_sdk import Runner</code>, <code>from agents import Runner</code>), not real framework packages — so a provenance gate keyed on real package names wouldn’t recognize them, and those tests would break unless the fixtures are reworked too. That coupling is why I stopped rather than quietly editing your tests.</p>
+
+<!-- ============================ REMEDIATION ============================ -->
+<h2>The remediation decision</h2>
+<p>Defect A (false positives) must be fixed regardless — a tool that emits confident wrong answers is worse than one that stays quiet. The open choice is <strong>Defect B</strong>:</p>
+<div class="card">
+<div class="mermaid">
+flowchart LR
+    D{"Defect B:<br/>split build / post"}
+    D --> O1["Option 1<br/>cross-function detection<br/>follow poster → builder call hop<br/><b>auto-discovers OpenHands</b>"]
+    D --> O2["Option 2<br/>resolution-protocol fallback<br/>surface as 'is this a sub-agent dispatch?'<br/><b>asks the user, not automatic</b>"]
+    style O1 fill:#e7f0ff,stroke:#0b5fff
+    style O2 fill:#f6f8fa,stroke:#5b6570
+</div>
+</div>
+<ul>
+  <li><strong>Option 1 — fix precision + cross-function:</strong> tighten the catalog (provenance-gate, drop bare <code>.run</code>/<code>.invoke</code>; rework fixtures) <em>and</em> follow the helper call so OpenHands auto-discovers. Most work; fully meets the “OpenHands works” goal.</li>
+  <li><strong>Option 2 — fix precision; resolution for B:</strong> kill the false positives now, and let the split build/post surface as an <em>unresolved candidate</em> the harness asks about. Less code, honest, but the motivating case isn’t auto-detected.</li>
+</ul>
+
+</body>
+</html>

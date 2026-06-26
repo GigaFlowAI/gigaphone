@@ -24,6 +24,7 @@ class BoundaryKind(_StrEnum):
     LLM = "llm"  # the gateway call that talks to the model
     TOOL_EXEC = "tool_exec"  # the function wrapping execution (trace the wrapper, not the sandbox)
     TOOL_RESULT_SINK = "tool_result_sink"  # where the result is written back into the message list
+    AGENT_CALL = "agent_call"  # a call that dispatches a whole sub-agent (black box by ownership)
 
 
 class FailureMode(_StrEnum):

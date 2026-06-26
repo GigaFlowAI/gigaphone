@@ -161,7 +161,7 @@ Pointing at files is a *scoping hint* (narrows search, raises precision), not a 
 ```yaml
 boundaries:
   - id: acme-gateway
-    kind: llm                                # llm | tool_exec | tool_result_sink
+    kind: llm                                # llm | tool_exec | tool_result_sink | agent_call
     match: { call: "our_llm.chat" }          # dotted name → generated per-language query
     input:  { arg: "messages" }
     output: { path: "response.text" }
@@ -174,9 +174,23 @@ boundaries:
     emit:   { name: "acme.exec" }
 ```
 
+- `agent_call` — a call that dispatches a whole sub-agent (black box by ownership);
+  recognized via the Agent-SDK catalog (seed family B), wrapped like `tool_exec`.
+
 `match.call` (dotted name) is language-neutral and compiles to a query in each active language pack; raw tree-sitter patterns are the per-language escape hatch. Built-in anchors are a bundled default pack in the same schema; project config overrides it and is authoritative.
 
-### 8.5 Drift
+### 8.5 Bidirectional harness review
+
+Deterministic discovery is the high-precision proposer, but it is not complete: dispatches
+built through factories, generic builders, or cross-module indirection are invisible to
+structural matching, and some heuristics over-fire. The bidirectional harness review
+(`gigaphone review`) is the high-recall + precision-audit pass: the harness (the reasoning
+engine, ADR-0006) reads the proposed boundaries against the code, rejects false positives,
+and adds missed boundaries; the result is written to the committed `gigaphone.boundaries.yaml`
+as data (ADR-0004), so routine and CI runs replay it deterministically — the model is the
+reasoning engine only at authoring/change time (see ADR-0009).
+
+### 8.6 Drift
 
 The committed config is checked against the codebase on each run; when discovery anchors no longer resolve (gateway moved/renamed, new provider added), GigaPhone flags drift and re-triggers Phase A for just the affected area. Discovery becomes an occasional, change-triggered step rather than a per-run cost.
 

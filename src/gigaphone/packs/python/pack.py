@@ -666,3 +666,106 @@ def _dedupe(descriptors: list[Descriptor]) -> list[Descriptor]:
     for d in descriptors:
         seen.setdefault(d.match_call, d)
     return list(seen.values())
+
+
+# --- native OTLP body-wrap codemod (Task NM1) ----------------------------------------
+
+def native_otel_body_wrap(
+    source: str,
+    func_name: str,
+    span_name: str,
+    kind: str,
+) -> CodeEdit | None:
+    """Wrap a function body in a native ``with trace…start_as_current_span()`` block.
+
+    Works for sync functions, async functions, and async generators.  No
+    ``gigaphone.runtime`` import is emitted — only ``from opentelemetry import trace``.
+
+    Returns ``None`` when:
+    - ``func_name`` is not found in ``source``, or
+    - the idempotency tag ``gigaphone:trace:<func_name>`` already appears in ``source``
+      (already wrapped — don't double-wrap).
+    """
+    tag = f"gigaphone:trace:{func_name}"
+    if tag in source:
+        return None
+
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None
+
+    # locate the function by name (top-level, nested, or method)
+    fn: ast.FunctionDef | ast.AsyncFunctionDef | None = None
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func_name:
+            fn = node
+            break
+    if fn is None or not fn.body:
+        return None
+
+    smap = SourceMap(source)
+
+    # Determine which statements to wrap (keep leading docstring outside)
+    body_stmts = fn.body
+    prefix_stmts: list[ast.stmt] = []
+    if (
+        body_stmts
+        and isinstance(body_stmts[0], ast.Expr)
+        and isinstance(body_stmts[0].value, ast.Constant)
+        and isinstance(body_stmts[0].value.value, str)
+    ):
+        prefix_stmts = [body_stmts[0]]
+        body_stmts = body_stmts[1:]
+
+    if not body_stmts:
+        # Nothing to wrap (body is only a docstring / pass)
+        return None
+
+    # base indentation = col_offset of the first statement to wrap
+    base_indent = " " * body_stmts[0].col_offset
+
+    # byte range to replace: line-start of the first stmt to wrap → end of function
+    body_start_byte = smap.line_start_offset(body_stmts[0].lineno)
+    body_end_byte = smap.offset(fn.end_lineno, fn.end_col_offset)
+
+    # extract the original text of the slice we are replacing
+    src_bytes = source.encode("utf-8")
+    original_body_text = src_bytes[body_start_byte:body_end_byte].decode("utf-8")
+
+    # re-indent every non-blank line by +4 spaces
+    reindented_lines: list[str] = []
+    for line in original_body_text.splitlines(keepends=True):
+        stripped = line.rstrip("\n").rstrip("\r")
+        if stripped.strip() == "":
+            # blank line: no trailing whitespace
+            reindented_lines.append("\n")
+        else:
+            reindented_lines.append("    " + line)
+    reindented_body = "".join(reindented_lines)
+    # ensure it ends with a newline
+    if not reindented_body.endswith("\n"):
+        reindented_body += "\n"
+
+    # build the with-block header + set_attribute line
+    with_header = (
+        f"{base_indent}with trace.get_tracer(__name__).start_as_current_span("
+        f"{span_name!r}) as span:  # {tag}\n"
+    )
+    set_attr = f'{base_indent}    span.set_attribute("gigaphone.kind", "{kind}")\n'
+
+    new_body_text = with_header + set_attr + reindented_body
+
+    body_hunk = Hunk(body_start_byte, body_end_byte, new_body_text, tag)
+
+    # import hunk — insert ``from opentelemetry import trace`` after __future__ / docstring
+    import_line = "from opentelemetry import trace"
+    import_tag = import_line  # idempotency: skip if already present
+    import_byte = _import_insert_offset(source, smap)
+    import_hunk = Hunk(import_byte, import_byte, import_line + "\n", import_tag)
+
+    return CodeEdit(
+        path="<source>",
+        hunks=[import_hunk, body_hunk],
+        description=f"native OTLP body-wrap for `{func_name}` (span={span_name!r}, kind={kind!r})",
+    )

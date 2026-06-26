@@ -24,8 +24,9 @@ class ClaudeCodeAdapter(HarnessAdapter):
         # Claude Code reads name + description; the body is the shared SKILL.md.
         return {"name": PLUGIN["name"], "description": PLUGIN["description"]}
 
-    def register_mcp(self, server: Any = None) -> dict:
-        return {"mcpServers": {PLUGIN["name"]: PLUGIN["mcp_server"]}}
+    def register_mcp(self, server: Any = None) -> None:
+        # The plugin ships no MCP server — the skill drives the engine via the CLI.
+        return None
 
     def hook(self, event: str, command: str) -> dict:
         # hooks/hooks.json shape — the map is wrapped under a top-level "hooks" key.

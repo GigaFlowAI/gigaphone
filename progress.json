@@ -10,7 +10,7 @@
     "M2": { "title": "Python language pack (stdlib ast; 4 fixes)", "status": "done" },
     "M3": { "title": "Generic OTel backend adapter + real span verify", "status": "done" },
     "M4": { "title": "Discovery -> committed config + resolution protocol + drift", "status": "done" },
-    "M5": { "title": "Harness adapters (Claude Code + Codex) + MCP verifier", "status": "done" },
+    "M5": { "title": "Harness adapters (Claude Code + Codex; skill-driven CLI, no MCP server)", "status": "done" },
     "M6": { "title": "TypeScript pack + native backends (Braintrust/LangSmith) + CI mode", "status": "done" }
   },
   "e2e_verified": "Python x OTel x testclient: discover -> classify -> (red) verify -> fix -> (green) verify -> idempotent. 30 tests green; the gigaphone CLI onboard prints a 3/3 nested+complete report.",

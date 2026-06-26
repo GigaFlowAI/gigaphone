@@ -23,7 +23,6 @@ dev = [
 
 [project.scripts]
 gigaphone = "gigaphone.cli:main"
-gigaphone-mcp = "gigaphone.mcp.server:serve"
 
 [build-system]
 requires = ["hatchling"]

@@ -26,8 +26,8 @@ claude plugin install gigaphone@gigaphone
 
 **No dependencies.** The engine is pure standard-library Python, so the plugin runs on a
 bare `python3` (3.9+, e.g. your system interpreter) — there is **no pip / uv / venv step**.
-Installing wires up a guided skill, an MCP server, and a post-edit hook that keeps coverage
-from regressing.
+Installing wires up a guided skill (which runs the engine via its CLI on demand) and a
+post-edit hook that keeps coverage from regressing.
 
 *(Codex: point it at the repo — the skill lives at `.agents/skills/gigaphone/`.)*
 

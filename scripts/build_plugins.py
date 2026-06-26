@@ -29,16 +29,7 @@ def _write_json(path: Path, obj: dict) -> None:
 
 
 def _toml(d: dict) -> str:
-    s = d["mcp_servers"]["gigaphone"]
-    args = json.dumps(s["args"])
-    return (
-        f'name = "{d["name"]}"\n'
-        f'version = "{d["version"]}"\n'
-        f'description = "{d["description"]}"\n\n'
-        f"[mcp_servers.gigaphone]\n"
-        f'command = "{s["command"]}"\n'
-        f"args = {args}\n"
-    )
+    return f'name = "{d["name"]}"\nversion = "{d["version"]}"\ndescription = "{d["description"]}"\n'
 
 
 def _yaml(d: dict) -> str:
@@ -57,8 +48,8 @@ def build() -> None:
     # Claude Code plugin = repo root.
     _write_json(ROOT / ".claude-plugin" / "plugin.json", cc["plugin.json"])
     _write_json(ROOT / ".claude-plugin" / "marketplace.json", cc["marketplace.json"])
-    _write_json(ROOT / ".mcp.json", cc[".mcp.json"])  # auto-loaded MCP server config
     _write_json(ROOT / "hooks" / "hooks.json", cc["hooks.json"])
+    (ROOT / ".mcp.json").unlink(missing_ok=True)  # no MCP server — the skill drives the CLI
     # Bundle the shared skill into the plugin (self-contained).
     if CLAUDE_SKILL.exists():
         shutil.rmtree(CLAUDE_SKILL)

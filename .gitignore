@@ -29,3 +29,6 @@ node_modules/
 # GigaPhone runtime artifacts (the committed config itself is NOT ignored)
 unresolved.json
 resolution.json
+
+# local agent worktrees / settings
+.claude/

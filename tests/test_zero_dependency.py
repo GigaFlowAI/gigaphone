@@ -57,8 +57,8 @@ def test_vendored_yaml_agrees_with_pyyaml():
 
 
 def test_engine_imports_without_any_third_party_module(monkeypatch):
-    """Importing the CLI / MCP / config must not require PyYAML, opentelemetry, or the
-    vendor SDKs — block them and confirm the engine still imports and lists its tools."""
+    """Importing the CLI / config must not require PyYAML, opentelemetry, or the vendor
+    SDKs — block them and confirm the engine still imports and exposes its verbs."""
     blocked = ("yaml", "opentelemetry", "opentelemetry.sdk", "braintrust", "langsmith")
     real_import = builtins.__import__
 
@@ -72,9 +72,7 @@ def test_engine_imports_without_any_third_party_module(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", guarded)
     import gigaphone.cli
     import gigaphone.config
-    import gigaphone.mcp.server as server
 
     importlib.reload(gigaphone.config)
     importlib.reload(gigaphone.cli)
-    importlib.reload(server)
-    assert {"discover", "plan", "fix", "verify"} <= {t["name"] for t in server.list_tools()}
+    assert {"discover", "plan", "fix", "verify"} <= {n for n, _ in gigaphone.cli.COMMANDS}

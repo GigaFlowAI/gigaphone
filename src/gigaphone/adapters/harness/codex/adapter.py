@@ -22,8 +22,9 @@ class CodexAdapter(HarnessAdapter):
     def skill_frontmatter(self) -> dict[str, Any]:
         return {"name": PLUGIN["name"], "description": PLUGIN["description"]}
 
-    def register_mcp(self, server: Any = None) -> dict:
-        return {"mcp_servers": {PLUGIN["name"]: PLUGIN["mcp_server"]}}
+    def register_mcp(self, server: Any = None) -> None:
+        # The plugin ships no MCP server — the skill drives the engine via the CLI.
+        return None
 
     def hook(self, event: str, command: str) -> dict:
         # Codex command-only hook.

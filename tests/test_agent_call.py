@@ -52,6 +52,28 @@ def test_catalog_recognizes_known_call_signatures():
     assert agent_sdks.match_call_site("os.path.join") is None
 
 
+def test_catalog_matches_method_only_with_package_provenance():
+    from gigaphone.packs.python import agent_sdks
+
+    assert agent_sdks.match_package_method("agents", "run").framework == "openai-agents"
+    assert agent_sdks.match_package_method("asyncio", "run") is None
+    assert agent_sdks.match_package_method("langgraph", "invoke").framework == "langgraph"
+
+
+def test_catalog_matches_construct_with_package_provenance():
+    from gigaphone.packs.python import agent_sdks
+
+    assert agent_sdks.match_construct("StartConversationRequest", "openhands").framework == "openhands-sdk"
+    assert agent_sdks.match_construct("Agent", "openhands").framework == "openhands-sdk"
+    assert agent_sdks.match_construct("Agent", "langchain") is None
+
+
+def test_carrier_methods_exposed():
+    from gigaphone.packs.python import agent_sdks
+
+    assert "post" in agent_sdks.carrier_methods()
+
+
 def test_catalog_entry_formatter_round_trips_shape():
     from gigaphone.packs.python import agent_sdks
 

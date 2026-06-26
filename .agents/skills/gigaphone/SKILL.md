@@ -65,7 +65,11 @@ stdlib, so just run it. Don't dump the whole pipeline at once; pause at each gat
      transport (an `httpx`/`requests` `.post` to a remote agent-server, a config built via a
      factory then serialized). Add each as a descriptor in `review.json` `add` with
      `kind: agent_call`, the enclosing function as `match_call`, and the complete-result
-     fields as `output_paths`.
+     fields as `output_paths`. `output_paths` are the field names the boundary's call returns
+     that should become span attributes — for a tool exec typically `stdout`, `stderr`,
+     `exit_code`; for a sub-agent dispatch the fields of its result object such as `events` or
+     `final_message` (read the dispatch/return type to pick them); they land as
+     `gigaphone.output.<field>` attributes on the span.
    - The result is committed to `gigaphone.boundaries.yaml`, so CI replays it deterministically
      — the model is in the loop only here, at authoring/change time.
 4. **Explain what's wrong.** Run `gigaphone plan`; summarize per tool which failure mode it
@@ -113,7 +117,10 @@ precise option. Then:
 
    review.json shape: `{ "reject": ["<descriptor id>", ...], "add": [ { "id", "kind",
    "match_call", "input_arg"?, "output_paths"?, "emit_name"? }, ... ] }`. Anything not rejected
-   is kept.
+   is kept. `match_call` in `review.json` corresponds to `match: {call: ...}` in the committed
+   yaml — the engine translates the flat key to the nested form. If `emit_name` is omitted the
+   engine derives a span name from the boundary; for an added sub-agent dispatch prefer an
+   explicit name like `<project>.subagent.<framework>` so the span reads clearly.
 
 ## Resolution protocol (the ambiguous ~20%)
 

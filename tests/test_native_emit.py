@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import ast
 
-import pytest
-
 from gigaphone.core.model import CodeEdit
 from gigaphone.packs.python.pack import native_otel_body_wrap
 
@@ -69,12 +67,12 @@ def test_body_wrap_async_stays_async():
 
 def test_body_wrap_async_generator_keeps_yield_inside_span():
     out = _apply(ASYNC_GEN, native_otel_body_wrap(ASYNC_GEN, "run", "svc.run", "agent"))
-    tree = ast.parse(out)
+    ast.parse(out)
     # still an async generator (has a yield), and the yield is nested under the with-block
     assert "yield t" in out
     src_lines = out.splitlines()
-    with_line = next(i for i, l in enumerate(src_lines) if "start_as_current_span" in l)
-    yield_line = next(i for i, l in enumerate(src_lines) if "yield t" in l)
+    with_line = next(i for i, line in enumerate(src_lines) if "start_as_current_span" in line)
+    yield_line = next(i for i, line in enumerate(src_lines) if "yield t" in line)
     assert yield_line > with_line
     # the yield is indented deeper than the with-header
     assert (len(src_lines[yield_line]) - len(src_lines[yield_line].lstrip())) > (
@@ -94,8 +92,8 @@ def test_body_wrap_docstring_preserved_outside_span():
     out = _apply(WITH_DOCSTRING, native_otel_body_wrap(WITH_DOCSTRING, "run", "svc.run", "tool"))
     ast.parse(out)
     lines = out.splitlines()
-    doc_line = next(i for i, l in enumerate(lines) if '"""Do the work."""' in l)
-    with_line = next(i for i, l in enumerate(lines) if "start_as_current_span" in l)
+    doc_line = next(i for i, line in enumerate(lines) if '"""Do the work."""' in line)
+    with_line = next(i for i, line in enumerate(lines) if "start_as_current_span" in line)
     assert doc_line < with_line
 
 

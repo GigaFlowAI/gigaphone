@@ -289,7 +289,10 @@ class PythonPack(LanguagePack):
             primitive.failure_mode == FailureMode.UNTRACED
             and boundary.kind == BoundaryKind.AGENT_CALL
         ):
-            span_name = boundary.emit_name or f"{boundary.provider_or_framework}.{boundary.func_name}"
+            span_name = (
+                boundary.emit_name
+                or f"{boundary.provider_or_framework}.{boundary.func_name}"
+            )
             edit = native_otel_body_wrap(source, boundary.func_name, span_name, "agent")
             if edit is not None:
                 edit.path = boundary.path
@@ -753,17 +756,15 @@ def native_otel_body_wrap(
 
     smap = SourceMap(source)
 
-    # Determine which statements to wrap (keep leading docstring outside)
+    # Determine which statements to wrap (keep a leading docstring outside the block)
     body_stmts = fn.body
-    prefix_stmts: list[ast.stmt] = []
     if (
         body_stmts
         and isinstance(body_stmts[0], ast.Expr)
         and isinstance(body_stmts[0].value, ast.Constant)
         and isinstance(body_stmts[0].value.value, str)
     ):
-        prefix_stmts = [body_stmts[0]]
-        body_stmts = body_stmts[1:]
+        body_stmts = body_stmts[1:]  # drop the docstring from the wrapped range
 
     if not body_stmts:
         # Nothing to wrap (body is only a docstring / pass)

@@ -13,6 +13,7 @@ from gigaphone.core.boundary import BoundaryKind, FailureMode, Source
 from gigaphone.core.model import Boundary, CodeEdit, Descriptor, FixPrimitive, Hunk, Range
 from gigaphone.core.source import SourceMap
 from gigaphone.interfaces.language_pack import LanguagePack
+from gigaphone.packs.python import agent_sdks
 
 # --- built-in anchor catalog (DESIGN §7.1) -------------------------------------------
 # Execution sinks: trace the wrapping function, never inside (DESIGN §3). Matched on the
@@ -140,6 +141,24 @@ class PythonPack(LanguagePack):
                         kind=BoundaryKind.TOOL_EXEC,
                         match_call=f"{module}.{name}",
                         emit_name=f"{_proj(module)}.{name}",
+                    )
+                )
+
+        # 4) agent-SDK dispatch (seed family B): a function whose body calls a known agent
+        #    framework. The sub-agent is a black box by ownership — we wrap this function.
+        for name, fn in funcs.by_name.items():
+            if name.startswith("_"):
+                continue
+            sdk = _match_agent_sdk_fn(fn)
+            if sdk is not None and not any(d.match_call.endswith(f".{name}") for d in out):
+                out.append(
+                    Descriptor(
+                        id=f"agent-{name}",
+                        kind=BoundaryKind.AGENT_CALL,
+                        match_call=f"{module}.{name}",
+                        input_arg=sdk.input_arg,
+                        output_paths=list(sdk.output_fields),
+                        emit_name=f"{_proj(module)}.subagent.{sdk.framework}",
                     )
                 )
         return _dedupe(out)
@@ -394,6 +413,16 @@ def _wraps_exec_sink(fn: ast.FunctionDef) -> bool:
             if dotted in _EXEC_CALL_EXACT or dotted.startswith(_EXEC_CALL_PREFIXES):
                 return True
     return False
+
+
+def _match_agent_sdk_fn(fn: ast.FunctionDef):
+    """Return the AgentSdk whose direct-call signature appears in this function body."""
+    for n in ast.walk(fn):
+        if isinstance(n, ast.Call):
+            sdk = agent_sdks.match_call_site(_attr_chain(n.func))
+            if sdk is not None and sdk.calls:
+                return sdk
+    return None
 
 
 def _find_span_with(fn: ast.FunctionDef) -> ast.With | None:

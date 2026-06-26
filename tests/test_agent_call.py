@@ -4,6 +4,7 @@ from __future__ import annotations
 from gigaphone.adapters.backend.otel import OtelAdapter
 from gigaphone.core.boundary import BoundaryKind, FailureMode
 from gigaphone.core.model import Boundary, Descriptor, Range
+from gigaphone.engine import discover as _discover
 from gigaphone.packs.python.pack import PythonPack
 
 _WRAPPER_SRC = '''\
@@ -59,3 +60,18 @@ def test_catalog_entry_formatter_round_trips_shape():
     )
     assert "AcmeRunner.run" in block
     assert "acme-agents" in block
+
+
+def test_discovery_finds_direct_agent_sdk_call(tmp_path):
+    (tmp_path / "harness.py").write_text(
+        "from __future__ import annotations\n"
+        "from agents import Runner\n\n"
+        "def run_subagent(task):\n"
+        "    return Runner.run(task)\n"
+    )
+    descs = _discover.discover(str(tmp_path))
+    agent = next((d for d in descs if d.kind.value == "agent_call"), None)
+    assert agent is not None
+    assert agent.match_call == "harness.run_subagent"
+    assert agent.emit_name == "harness.subagent.openai-agents"
+    assert agent.output_paths == ["final_output"]

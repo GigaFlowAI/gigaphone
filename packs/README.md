@@ -7,6 +7,8 @@ shallow def-use + `off_context` hop-signatures + codemod emitters. See
 
 - `python/` — v1 (M2). tree-sitter-python; contextvars / thread-pool / `run_in_executor`
   hop-signatures. `queries/` holds the S-expression anchor queries.
-- `typescript/` — v1 (M6). tree-sitter-typescript; AsyncLocalStorage / worker_threads.
+- `typescript/` — v1 (M6). lexical (regex/brace-scanning); AsyncLocalStorage / worker_threads.
+- `rust/` — v1. lexical (regex/brace-scanning); `tracing`-crate spans; `tokio::spawn` /
+  `std::thread::spawn` / thread-pool hop-signatures; `match`-based tool dispatch.
 
 A new language is a new pack here, with **no engine change**.

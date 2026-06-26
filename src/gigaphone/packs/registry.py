@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from gigaphone.interfaces.language_pack import LanguagePack
 from gigaphone.packs.python import PythonPack
+from gigaphone.packs.rust import RustPack
 from gigaphone.packs.typescript import TypeScriptPack
 
-_PACKS: list[LanguagePack] = [PythonPack(), TypeScriptPack()]
+_PACKS: list[LanguagePack] = [PythonPack(), TypeScriptPack(), RustPack()]
 
 
 def all_packs() -> list[LanguagePack]:

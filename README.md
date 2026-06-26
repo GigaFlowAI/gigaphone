@@ -85,7 +85,7 @@ your trace. See [ADR-0003](docs/adr/0003-trace-the-consumption-boundary.md).
    │               precisely           diffs                                │
    │                                                                        │
    │   parameterized inward by:                                             │
-   │     • Language pack    python · typescript     (parsing + codemods)    │
+   │     • Language pack    python · typescript · rust (parsing + codemods) │
    │     • Boundary config  gigaphone.boundaries.yaml  (discovered per repo)│
    └───────────────────────────────┬───────────────────────────────────────┘
                                     ▼ emit + verify
@@ -100,7 +100,7 @@ freely (e.g. Codex × TypeScript × LangSmith × your gateway):
 | Axis | What varies | How it plugs in |
 |------|-------------|-----------------|
 | **Harness** | how GigaPhone is driven & packaged (Claude Code, Codex; later Cursor, Gemini…) | harness adapter (`src/gigaphone/adapters/harness/`) |
-| **Language** | the codebase's language (Python, TypeScript) | language pack (`src/gigaphone/packs/`) |
+| **Language** | the codebase's language (Python, TypeScript, Rust) | language pack (`src/gigaphone/packs/`) |
 | **Vendor** | where spans are emitted & verified (Braintrust, LangSmith, Arize, Logfire, any OTLP) | backend adapter (`src/gigaphone/adapters/backend/`) |
 | **Codebase** | the shape of *your* code, especially the LLM gateway | discovered **config**, not code (`gigaphone.boundaries.yaml`) |
 

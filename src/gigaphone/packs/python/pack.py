@@ -8,6 +8,8 @@ engine talks only to the ``LanguagePack`` interface and never sees ``ast`` (ADR-
 from __future__ import annotations
 
 import ast
+import io
+import tokenize as _tokenize
 
 from gigaphone.core.boundary import BoundaryKind, FailureMode, Source
 from gigaphone.core.model import Boundary, CodeEdit, Descriptor, FixPrimitive, Hunk, Range
@@ -371,6 +373,18 @@ class PythonPack(LanguagePack):
 
     # --------------------------------------------------------------------- fix emission
     def emit_fix(self, boundary: Boundary, primitive: FixPrimitive, source: str) -> CodeEdit | None:
+        if (
+            primitive.failure_mode == FailureMode.UNTRACED
+            and boundary.kind == BoundaryKind.AGENT_CALL
+        ):
+            span_name = (
+                boundary.emit_name or f"{boundary.provider_or_framework}.{boundary.func_name}"
+            )
+            edit = native_otel_body_wrap(source, boundary.func_name, span_name, "agent")
+            if edit is not None:
+                edit.path = boundary.path
+            return edit
+
         smap = SourceMap(source)
         import_byte = _import_insert_offset(source, smap)
         import_hunk = Hunk(
@@ -828,3 +842,153 @@ def _dedupe(descriptors: list[Descriptor]) -> list[Descriptor]:
     for d in descriptors:
         seen.setdefault(d.match_call, d)
     return list(seen.values())
+
+
+# --- native OTLP body-wrap codemod (Task NM1) ----------------------------------------
+
+# String-like token types that can span multiple physical lines.
+# Built at import time; includes FSTRING_*/TSTRING_* on Python 3.12+ / 3.14+.
+_STRING_TOKEN_TYPES: frozenset[int] = frozenset(
+    getattr(_tokenize, _name)
+    for _name in (
+        "STRING",
+        "FSTRING_START",
+        "FSTRING_MIDDLE",
+        "FSTRING_END",
+        "TSTRING_START",
+        "TSTRING_MIDDLE",
+        "TSTRING_END",
+    )
+    if hasattr(_tokenize, _name)
+)
+
+
+def _multiline_string_interior_lines(body_text: str) -> frozenset[int]:
+    """Return 1-based line numbers that are interior to multi-line string tokens.
+
+    "Interior" means every physical line *after* the opening line of the token,
+    up to and including the line with the closing quote.  These lines must not
+    be re-indented because adding spaces would silently corrupt the string value.
+
+    Falls back to an empty set on ``TokenError`` (tokeniser cannot handle an
+    incomplete fragment) — callers should treat that as "nothing protected".
+    """
+    interior: set[int] = set()
+    try:
+        tokens = list(_tokenize.generate_tokens(io.StringIO(body_text).readline))
+    except _tokenize.TokenError:
+        return frozenset()
+    for tok in tokens:
+        if tok.type in _STRING_TOKEN_TYPES and tok.end[0] > tok.start[0]:
+            for ln in range(tok.start[0] + 1, tok.end[0] + 1):
+                interior.add(ln)
+    return frozenset(interior)
+
+
+def native_otel_body_wrap(
+    source: str,
+    func_name: str,
+    span_name: str,
+    kind: str,
+) -> CodeEdit | None:
+    """Wrap a function body in a native ``with trace…start_as_current_span()`` block.
+
+    Works for sync functions, async functions, and async generators.  No
+    ``gigaphone.runtime`` import is emitted — only ``from opentelemetry import trace``.
+
+    Returns ``None`` when:
+    - ``func_name`` is not found in ``source``, or
+    - the idempotency tag ``gigaphone:trace:<func_name>`` already appears in ``source``
+      (already wrapped — don't double-wrap).
+    """
+    tag = f"gigaphone:trace:{func_name}"
+    if tag in source:
+        return None
+
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None
+
+    # locate the function by name (top-level, nested, or method)
+    fn: ast.FunctionDef | ast.AsyncFunctionDef | None = None
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func_name:
+            fn = node
+            break
+    if fn is None or not fn.body:
+        return None
+
+    smap = SourceMap(source)
+
+    # Determine which statements to wrap (keep a leading docstring outside the block)
+    body_stmts = fn.body
+    if (
+        body_stmts
+        and isinstance(body_stmts[0], ast.Expr)
+        and isinstance(body_stmts[0].value, ast.Constant)
+        and isinstance(body_stmts[0].value.value, str)
+    ):
+        body_stmts = body_stmts[1:]  # drop the docstring from the wrapped range
+
+    if not body_stmts:
+        # Nothing to wrap (body is only a docstring / pass)
+        return None
+
+    # base indentation = col_offset of the first statement to wrap
+    base_indent = " " * body_stmts[0].col_offset
+
+    # byte range to replace: line-start of the first stmt to wrap → start of NEXT line.
+    # Extending to fn.end_lineno + 1 includes the trailing '\n' of the function's last
+    # line so that reassembly never produces a double newline (fix for trailing-\n bug).
+    body_start_byte = smap.line_start_offset(body_stmts[0].lineno)
+    body_end_byte = smap.line_start_offset(fn.end_lineno + 1)
+
+    # extract the original text of the slice we are replacing
+    src_bytes = source.encode("utf-8")
+    original_body_text = src_bytes[body_start_byte:body_end_byte].decode("utf-8")
+
+    # Determine which physical lines are interior to multi-line string tokens.
+    # Those lines must be passed through verbatim — adding spaces would corrupt
+    # the string value (fix for multi-line string corruption bug).
+    no_indent_lines = _multiline_string_interior_lines(original_body_text)
+
+    # re-indent every non-blank, non-string-interior line by +4 spaces
+    reindented_lines: list[str] = []
+    for i, line in enumerate(original_body_text.splitlines(keepends=True), start=1):
+        stripped = line.rstrip("\n").rstrip("\r")
+        if stripped.strip() == "":
+            # blank line: no trailing whitespace
+            reindented_lines.append("\n")
+        elif i in no_indent_lines:
+            # interior of a multi-line string literal — keep exactly as-is
+            reindented_lines.append(line)
+        else:
+            reindented_lines.append("    " + line)
+    reindented_body = "".join(reindented_lines)
+    # ensure it ends with a newline
+    if not reindented_body.endswith("\n"):
+        reindented_body += "\n"
+
+    # build the with-block header + set_attribute line
+    with_header = (
+        f"{base_indent}with trace.get_tracer(__name__).start_as_current_span("
+        f"{span_name!r}) as span:  # {tag}\n"
+    )
+    set_attr = f'{base_indent}    span.set_attribute("gigaphone.kind", "{kind}")\n'
+
+    new_body_text = with_header + set_attr + reindented_body
+
+    body_hunk = Hunk(body_start_byte, body_end_byte, new_body_text, tag)
+
+    # import hunk — insert ``from opentelemetry import trace`` after __future__ / docstring
+    import_line = "from opentelemetry import trace"
+    import_tag = import_line  # idempotency: skip if already present
+    import_byte = _import_insert_offset(source, smap)
+    import_hunk = Hunk(import_byte, import_byte, import_line + "\n", import_tag)
+
+    return CodeEdit(
+        path="<source>",
+        hunks=[import_hunk, body_hunk],
+        description=f"native OTLP body-wrap for `{func_name}` (span={span_name!r}, kind={kind!r})",
+    )

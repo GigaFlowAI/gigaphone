@@ -49,7 +49,13 @@ def test_agent_wrapper_red_then_green_then_idempotent(repo):
 
     with open(os.path.join(repo, "harness", "service.py"), encoding="utf-8") as f:
         src = f.read()
-    assert 'kind="agent"' in src
+    assert (
+        'start_as_current_span("harness.subagent.openai-agents")' in src
+        or "start_as_current_span('harness.subagent.openai-agents')" in src
+    )
+    assert "from opentelemetry import trace" in src
+    assert "gigaphone_trace" not in src  # NO runtime shim import
+    assert 'span.set_attribute("gigaphone.kind", "agent")' in src
 
     boundaries2 = _detect.detect(repo, descs, "harness")
     rerun = _fix.apply_fixes(repo, boundaries2, backend)

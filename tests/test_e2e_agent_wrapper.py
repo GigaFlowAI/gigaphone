@@ -52,3 +52,14 @@ def test_agent_wrapper_red_then_green_then_idempotent(repo):
     boundaries2 = _detect.detect(repo, descs, "harness")
     rerun = _fix.apply_fixes(repo, boundaries2, backend)
     assert not rerun.diffs
+
+
+def test_cli_onboard_actually_verifies_agent_call(repo, capsys):
+    from gigaphone.cli import main
+
+    rc = main(["onboard", "--repo", repo, "--scope", "harness", "--module", "harness.run_representative"])
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    # non-vacuous: the single agent_call boundary was fixed AND verified (not 0/0)
+    assert "1/1" in out, out
+    assert "run_subagent" in out

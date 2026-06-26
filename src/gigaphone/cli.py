@@ -178,7 +178,11 @@ def _cmd_verify(args) -> int:
     descriptors = config.load(args.repo)
     boundaries = _detect.detect(args.repo, descriptors, None)
     backend = select_backend(args.repo, args.backend)
-    expectations = [backend.expectation_for(b) for b in boundaries if b.kind.value == "tool_exec"]
+    expectations = [
+        backend.expectation_for(b)
+        for b in boundaries
+        if b.kind.value in ("tool_exec", "agent_call")
+    ]
     results = _verify.verify(args.repo, expectations, backend, args.module)
     for v in results:
         print(f"  {'✓' if v.ok else '✗'} {v.tool}: {'nested + complete' if v.ok else v.detail}")
@@ -191,7 +195,11 @@ def _cmd_onboard(args) -> int:
     config.save(args.repo, descriptors)
     boundaries = _detect.detect(args.repo, descriptors, args.scope)
     plan = build_plan(descriptors, boundaries)
-    expectations = [backend.expectation_for(b) for b in boundaries if b.kind.value == "tool_exec"]
+    expectations = [
+        backend.expectation_for(b)
+        for b in boundaries
+        if b.kind.value in ("tool_exec", "agent_call")
+    ]
     _fix.apply_fixes(args.repo, boundaries, backend)
     results = _verify.verify(args.repo, expectations, backend, args.module)
     print(

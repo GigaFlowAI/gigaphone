@@ -36,6 +36,19 @@ class FailureMode(_StrEnum):
     LOSSY_OUTPUT = "lossy_output"  # traced but logs only the truncated model-facing string
 
 
+# The OpenInference LLM convention: what an `llm` span must carry to count as complete
+# (DESIGN §10, this feature). Neutral across vendor — the OTel/OpenInference adapter
+# verifies these keys; native adapters map onto their own equivalents. `llm.tool_calls` is
+# emitted when the model requested tools but is NOT required (absent on a final answer).
+LLM_CONVENTION_ATTRS = (
+    "llm.model_name",
+    "llm.input_messages",
+    "llm.output_messages",
+    "llm.token_count.prompt",
+    "llm.token_count.completion",
+)
+
+
 class Source(_StrEnum):
     """How a boundary was found (plan-record provenance, DESIGN §11)."""
 

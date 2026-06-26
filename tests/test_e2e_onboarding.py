@@ -60,8 +60,9 @@ def test_localization_classifies_each_failure_mode(repo):
     assert boundaries["run_code"].complete_output_fields == ["stdout", "stderr", "exit_code"]
     assert boundaries["fetch_url"].failure_modes == [FailureMode.OFF_CONTEXT]
     assert boundaries["web_search"].failure_modes == [FailureMode.LOSSY_OUTPUT]
-    # the gateway is already traded by the customer -> covered, no failure modes
-    assert boundaries["chat"].failure_modes == []
+    # the gateway is traced but misses the OpenInference convention -> lossy_output (llm)
+    assert boundaries["chat"].kind == BoundaryKind.LLM
+    assert boundaries["chat"].failure_modes == [FailureMode.LOSSY_OUTPUT]
 
 
 def test_full_onboarding_flow_red_then_green_then_idempotent(repo):
@@ -70,12 +71,12 @@ def test_full_onboarding_flow_red_then_green_then_idempotent(repo):
     config.save(repo, descs)
     boundaries = _detect.detect(repo, descs, "app")
     expectations = _expectations(backend, boundaries)
-    assert len(expectations) == 3  # run_code, web_search, fetch_url
+    assert len(expectations) == 4  # chat (llm) + run_code, web_search, fetch_url
 
-    # --- RED: before any fix, the representative run loses/orphans/truncates tool spans ---
+    # --- RED: before any fix, the representative run loses/orphans/truncates spans ---
     before = _verify.verify(repo, expectations, backend)
     assert not all(v.ok for v in before), "pre-fix verify should fail (the breaking fixture)"
-    assert {v.tool for v in before if not v.ok} == {"run_code", "web_search", "fetch_url"}
+    assert {v.tool for v in before if not v.ok} == {"chat", "run_code", "web_search", "fetch_url"}
 
     # --- FIX: apply idempotent codemods, surfaced as diffs ---
     result = _fix.apply_fixes(repo, boundaries, backend)
@@ -93,7 +94,7 @@ def test_full_onboarding_flow_red_then_green_then_idempotent(repo):
     assert all(
         not b.failure_modes
         for b in boundaries2
-        if b.func_name in {"run_code", "web_search", "fetch_url"}
+        if b.func_name in {"chat", "run_code", "web_search", "fetch_url"}
     )
     rerun = _fix.apply_fixes(repo, boundaries2, backend)
     assert not rerun.diffs, "re-running fix must not change the file again"
@@ -113,5 +114,5 @@ def test_onboarding_report_counts(repo):
     )
     assert "1 untraced" in text
     assert "1 off-context" in text
-    assert "1 lossy" in text
-    assert "3/3" in text
+    assert "2 lossy" in text  # web_search (tool) + chat (llm gateway)
+    assert "4/4" in text

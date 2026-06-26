@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from gigaphone.core.boundary import BoundaryKind
 from gigaphone.core.model import Boundary, Descriptor
 from gigaphone.core.plan_record import PlanRecord
 
@@ -54,6 +53,6 @@ def build_plan(descriptors: list[Descriptor], boundaries: list[Boundary]) -> Pla
             "Which function consumes its result and returns it to the agent loop?",
         )
         for d in descriptors
-        if d.match_call not in resolved_calls and d.kind != BoundaryKind.LLM
+        if d.match_call not in resolved_calls
     ]
     return Plan(records=records, unresolved=unresolved)

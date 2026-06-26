@@ -5,6 +5,7 @@ built-in provider anchors, DESIGN §8). The customer already traces it as an "ll
 so LLM visibility is fine; what gets lost downstream is the *tool* output. The model is a
 deterministic mock so the onboarding e2e is reproducible without a network call.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -24,6 +25,7 @@ class Message:
     content: str = ""
     tool_call: ToolCall | None = None
     tool_call_id: str | None = None
+    usage: dict | None = None  # the gateway HAS token usage; it just isn't traced (lossy)
 
 
 @dataclass
@@ -39,6 +41,12 @@ class LLMGateway:
             span.set_attribute("llm.model", self.model)
             span.set_attribute("llm.n_messages", len(messages))
             reply = self._next(messages)
+            # The gateway computes usage but only logs model + count — input/output messages
+            # and token usage never reach the span. That is the lossy LLM boundary.
+            reply.usage = {
+                "prompt": sum(len(m.content) for m in messages),
+                "completion": len(reply.content),
+            }
             span.set_attribute("llm.tool_call", reply.tool_call.name if reply.tool_call else "")
             return reply
 
@@ -47,9 +55,15 @@ class LLMGateway:
         # Deterministic plan: run_code -> web_search -> fetch_url -> final answer.
         n_tool_results = sum(1 for m in messages if m.role == "tool")
         if n_tool_results == 0:
-            return Message("assistant", tool_call=ToolCall("run_code", {"code": "print(sum(range(10)))"}))
+            return Message(
+                "assistant", tool_call=ToolCall("run_code", {"code": "print(sum(range(10)))"})
+            )
         if n_tool_results == 1:
-            return Message("assistant", tool_call=ToolCall("web_search", {"query": "python sum builtin"}))
+            return Message(
+                "assistant", tool_call=ToolCall("web_search", {"query": "python sum builtin"})
+            )
         if n_tool_results == 2:
-            return Message("assistant", tool_call=ToolCall("fetch_url", {"url": "https://example.com/doc"}))
+            return Message(
+                "assistant", tool_call=ToolCall("fetch_url", {"url": "https://example.com/doc"})
+            )
         return Message("assistant", content="Done: computed the sum and gathered references.")

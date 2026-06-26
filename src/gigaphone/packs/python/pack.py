@@ -26,6 +26,27 @@ _POOL_CTORS = {"ThreadPoolExecutor", "ProcessPoolExecutor"}
 # context-hop signatures: a span created behind one of these orphans unless context is
 # restored (DESIGN §7.1, §10). `asyncio.create_task` copies context — intentionally absent.
 _CONTEXT_HOP_CALLS = {"submit", "map", "run_in_executor", "to_thread", "apply_async"}
+# provider SDK call signatures → provider tag (DESIGN §7.1; drives the instrumentor fix).
+# Ordered: more specific first (endswith match).
+_SDK_CALL_PROVIDERS = (
+    ("chat.completions.create", "openai"),
+    ("responses.create", "openai"),
+    ("messages.create", "anthropic"),
+    ("completions.create", "openai"),
+)
+# attr names that mark an llm span as already convention-complete (idempotency).
+_LLM_FIX_FUNCS = ("gigaphone_llm_complete", "gigaphone_llm_trace")
+
+
+def _provider_sdk_call(fn: ast.AST) -> str | None:
+    """Return the provider tag if ``fn`` calls a known LLM SDK, else None."""
+    for n in ast.walk(fn):
+        if isinstance(n, ast.Call):
+            dotted = _attr_chain(n.func)
+            for sig, prov in _SDK_CALL_PROVIDERS:
+                if dotted.endswith(sig):
+                    return prov
+    return None
 
 
 def _attr_chain(node: ast.AST) -> str:
@@ -100,9 +121,36 @@ class PythonPack(LanguagePack):
                             match_call=f"{module}.{cls.name}.{m.name}",
                             input_arg=arg,
                             emit_name=f"{_proj(module)}.llm",
+                            provider=_provider_sdk_call(m) or "hand_rolled",
                         )
                     )
                     break
+
+        # 1b) provider-SDK gateway: a function/method that calls a known LLM SDK
+        #     (openai/anthropic). Tagged with its provider so the fix enables that
+        #     provider's OpenInference instrumentor (Approach A, Path 1).
+        sdk_funcs = _Functions()
+        sdk_funcs.visit(tree)
+        for name, fn in sdk_funcs.by_name.items():
+            provider = _provider_sdk_call(fn)
+            if provider is None:
+                continue
+            call = f"{module}.{name}"
+            if any(d.match_call == call or d.match_call.endswith(f".{name}") for d in out):
+                continue
+            arg = next(
+                (a.arg for a in fn.args.args if a.arg in ("messages", "prompt", "input")), None
+            )
+            out.append(
+                Descriptor(
+                    id=f"{name}-gateway",
+                    kind=BoundaryKind.LLM,
+                    match_call=call,
+                    input_arg=arg,
+                    emit_name=f"{_proj(module)}.llm",
+                    provider=provider,
+                )
+            )
 
         # 2) tool dispatch registry: a module-level dict {name: fn}. Resolve each fn via the
         #    file's import map to a dotted target (DESIGN §7.1 dispatch/registry anchor).
@@ -188,6 +236,8 @@ class PythonPack(LanguagePack):
             source=Source.SPEC,
         )
         b.emit_name = d.emit_name
+        b.provider = d.provider
+        b.llm_messages_arg = d.input_arg
 
         # complete output fields: infer from the return type if the descriptor didn't say.
         if not b.complete_output_fields and d.kind == BoundaryKind.TOOL_EXEC:
@@ -200,9 +250,10 @@ class PythonPack(LanguagePack):
             b.requires_complete_attrs = True
             return b
 
-        # the LLM gateway boundary is traced in this codebase -> covered (kept for drift).
+        # LLM gateway: classify against the OpenInference convention (untraced / lossy_output)
+        # and fix, rather than assuming it is already traced.
         if d.kind == BoundaryKind.LLM:
-            return b
+            return self._classify_llm(b, fn, source, smap)
 
         span_with = _find_span_with(fn)
         hop = _find_context_hop(fn)
@@ -255,6 +306,43 @@ class PythonPack(LanguagePack):
         b.insert_indent = " " * fn.col_offset
         return b
 
+    def _classify_llm(self, b, fn, source, smap) -> Boundary:
+        """Classify an LLM gateway boundary against the OpenInference convention."""
+        b.requires_llm_convention = True
+        # already convention-complete (idempotent) -> covered, kept for drift.
+        if any(_calls_function(fn, name) for name in _LLM_FIX_FUNCS):
+            span_with = _find_span_with(fn)
+            b.existing_span_name = _span_name(span_with) if span_with else b.emit_name
+            return b
+
+        span_with = _find_span_with(fn)
+        if span_with is not None:
+            # a span exists but does not record the convention -> lossy_output: augment it.
+            b.existing_span_name = _span_name(span_with)
+            b.span_var = _with_span_var(span_with)
+            ret = _find_return(span_with)
+            if ret is not None and ret.value is not None:
+                b.llm_response_expr = ast.unparse(ret.value)
+                b.span_block_insert_byte = smap.line_start_offset(ret.lineno)
+                b.insert_indent = " " * ret.col_offset
+            else:
+                last = span_with.body[-1]
+                b.span_block_insert_byte = smap.line_start_offset(last.end_lineno + 1)
+                b.insert_indent = " " * last.col_offset
+            b.llm_model_expr = _llm_model_expr(span_with)
+            if b.span_var is not None:
+                b.failure_modes = [FailureMode.LOSSY_OUTPUT]
+            return b
+
+        # no span at the gateway -> untraced: wrap it with a gigaphone llm span.
+        b.failure_modes = [FailureMode.UNTRACED]
+        b.llm_model_attr = _llm_model_attr(fn)
+        b.decorator_insert_byte = smap.line_start_offset(
+            fn.decorator_list[0].lineno if fn.decorator_list else fn.lineno
+        )
+        b.insert_indent = " " * fn.col_offset
+        return b
+
     # --------------------------------------------------------------------- fix emission
     def emit_fix(self, boundary: Boundary, primitive: FixPrimitive, source: str) -> CodeEdit | None:
         smap = SourceMap(source)
@@ -262,6 +350,35 @@ class PythonPack(LanguagePack):
         import_hunk = Hunk(
             import_byte, import_byte, primitive.import_line + "\n", primitive.import_line
         )
+
+        # LLM lossy_output: augment the existing gateway span with the OpenInference
+        # convention (input/output messages, model, usage, tool_calls).
+        if (
+            boundary.kind == BoundaryKind.LLM
+            and primitive.failure_mode == FailureMode.LOSSY_OUTPUT
+            and boundary.span_block_insert_byte is not None
+            and boundary.span_var is not None
+        ):
+            at = boundary.span_block_insert_byte
+            indent = (
+                boundary.insert_indent
+                if boundary.insert_indent is not None
+                else _indent_at(source, at)
+            )
+            arg = boundary.llm_messages_arg or "messages"
+            resp = boundary.llm_response_expr or "None"
+            model = boundary.llm_model_expr or "None"
+            tag = f"gigaphone:llm:{boundary.func_name}"
+            call = (
+                f"gigaphone_llm_complete({boundary.span_var}, "
+                f"messages={arg}, response={resp}, model={model})"
+            )
+            return CodeEdit(
+                boundary.path,
+                [import_hunk, Hunk(at, at, f"{indent}{call}  # {tag}\n", tag)],
+                f"record the OpenInference LLM convention for `{boundary.func_name}` "
+                f"({primitive.backend_id})",
+            )
 
         if (
             primitive.failure_mode == FailureMode.UNTRACED
@@ -387,6 +504,51 @@ def _wraps_exec_sink(fn: ast.FunctionDef) -> bool:
             if dotted in _EXEC_CALL_EXACT or dotted.startswith(_EXEC_CALL_PREFIXES):
                 return True
     return False
+
+
+def _with_span_var(span_with: ast.With) -> str | None:
+    for item in span_with.items:
+        if item.optional_vars and isinstance(item.optional_vars, ast.Name):
+            return item.optional_vars.id
+    return None
+
+
+def _find_return(node: ast.AST) -> ast.Return | None:
+    for n in ast.walk(node):
+        if isinstance(n, ast.Return):
+            return n
+    return None
+
+
+def _llm_model_expr(span_with: ast.With) -> str | None:
+    """Source expr of the model name from an existing `set_attribute("...model...", X)`."""
+    for n in ast.walk(span_with):
+        if (
+            isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Attribute)
+            and n.func.attr == "set_attribute"
+            and len(n.args) >= 2
+        ):
+            key = n.args[0]
+            if (
+                isinstance(key, ast.Constant)
+                and isinstance(key.value, str)
+                and "model" in key.value.lower()
+            ):
+                return ast.unparse(n.args[1])
+    return None
+
+
+def _llm_model_attr(fn: ast.FunctionDef) -> str | None:
+    for n in ast.walk(fn):
+        if (
+            isinstance(n, ast.Attribute)
+            and isinstance(n.value, ast.Name)
+            and n.value.id == "self"
+            and n.attr in ("model", "model_name", "_model")
+        ):
+            return n.attr
+    return None
 
 
 def _find_span_with(fn: ast.FunctionDef) -> ast.With | None:

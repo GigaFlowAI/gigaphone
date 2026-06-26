@@ -33,6 +33,9 @@ class Descriptor:
     input_arg: str | None = None
     output_paths: list[str] = field(default_factory=list)  # complete-result fields
     emit_name: str | None = None
+    # for kind=llm: which provider the gateway uses — drives the fix path (Approach A).
+    # "openai" | "anthropic" | "langchain" | "hand_rolled" | None (not an llm boundary).
+    provider: str | None = None
 
     def to_yaml_obj(self) -> dict:
         out: dict = {"id": self.id, "kind": self.kind.value, "match": {"call": self.match_call}}
@@ -46,6 +49,8 @@ class Descriptor:
             )
         if self.emit_name:
             out["emit"] = {"name": self.emit_name}
+        if self.provider:
+            out["provider"] = self.provider
         return out
 
     @classmethod
@@ -59,6 +64,7 @@ class Descriptor:
             input_arg=(o.get("input") or {}).get("arg"),
             output_paths=list(paths),
             emit_name=(o.get("emit") or {}).get("name"),
+            provider=o.get("provider"),
         )
 
 
@@ -95,6 +101,14 @@ class Boundary:
     # forms; false for off_context where nesting is the whole fix). Lets `verify` build a
     # full expectation from a boundary whether or not it still has a failure mode.
     requires_complete_attrs: bool = False
+    # --- LLM boundary (kind=llm) extras ---
+    provider: str | None = None  # openai | anthropic | langchain | hand_rolled
+    # the llm span must carry the OpenInference convention (model/messages/usage/tool_calls).
+    requires_llm_convention: bool = False
+    llm_messages_arg: str | None = None  # name of the messages/prompt parameter
+    llm_response_expr: str | None = None  # source expr of the returned response (lossy fix)
+    llm_model_expr: str | None = None  # source expr yielding the model name (lossy fix)
+    llm_model_attr: str | None = None  # instance attr holding the model name (untraced fix)
 
 
 @dataclass(frozen=True)
@@ -145,6 +159,7 @@ class Expectation:
     span_name: str  # post-fix span name to find in the trace
     require_nested: bool = True  # must be nested under the agent root, not an orphan
     require_attrs: list[str] = field(default_factory=list)  # complete-output attribute keys
+    kind: str = "tool_exec"  # "tool_exec" | "llm" — which boundary this expectation covers
 
 
 @dataclass
@@ -156,7 +171,42 @@ class VerifyResult:
     nested: bool
     complete: bool
     detail: str = ""
+    kind: str = "tool_exec"  # "tool_exec" | "llm"
 
     @property
     def ok(self) -> bool:
         return self.found and self.nested and self.complete
+
+    @property
+    def kind_is_llm(self) -> bool:
+        return self.kind == "llm"
+
+
+@dataclass
+class LinkageResult:
+    """Did the model's tool request causally link to a tool span in the same tree?"""
+
+    requested: str  # the tool the model asked for (from an llm span's tool_calls)
+    linked: bool
+
+
+@dataclass
+class TreeVerifyResult:
+    """End-to-end proof that one representative run produced a single coherent trace tree:
+    a root agent span with every LLM and tool span nested + complete, and each requested
+    tool causally linked to its span (this feature; DESIGN §12)."""
+
+    single_root: bool
+    root_span_name: str | None
+    results: list[VerifyResult] = field(default_factory=list)  # per expectation (llm + tool)
+    linkage: list[LinkageResult] = field(default_factory=list)
+    detail: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return (
+            self.single_root
+            and bool(self.results)
+            and all(r.ok for r in self.results)
+            and all(link.linked for link in self.linkage)
+        )

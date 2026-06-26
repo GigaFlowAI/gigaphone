@@ -5,10 +5,12 @@ description: Use when onboarding a codebase to trace-coverage, or when AI agent 
 
 # GigaPhone
 
-You are driving **GigaPhone**, a trace-coverage tool. Its goal: every AI-agent **tool
-execution** (especially code-execution tools) lands in the customer's observability
-backend as a span **nested under the correct agent trace, with complete inputs and
-outputs**. If a tool's output never reaches the trace, the eval platform can't score it.
+You are driving **GigaPhone**, a trace-coverage tool. Its goal: every call in the agent
+loop — both the **LLM gateway call** and every **tool execution** (especially
+code-execution tools) — lands in the customer's observability backend as a span **nested
+under the correct agent trace, with complete inputs and outputs**. If an LLM call or a
+tool's output never reaches the trace, the eval platform can't score it. GigaPhone proves
+the *whole* trace tree end to end, not just that fixes were wired in.
 
 The engine is a deterministic CLI. **You are the reasoning engine** for two semantic
 steps only — discovery and resolution. The engine never calls a model; you do, through
@@ -31,6 +33,14 @@ Instrument the **in-process consumption boundary** — the layer that hands the 
 result back to the agent's model. Treat the sandbox (subprocess/Docker/E2B/remote) as a
 black box; never try to instrument inside it.
 
+The **LLM gateway** (`kind: llm`) is classified and fixed too — it is not assumed
+already-traced. The same three modes apply with an OpenInference reading: `untraced` (no
+span / no instrumentor), `lossy_output` (a span exists but misses the convention — input
+messages, output, model, token usage, tool_calls), `off_context` (gateway called off the
+agent context). For a recognized provider SDK (openai/anthropic/langchain) the fix enables
+that provider's OpenInference instrumentor; for a hand-rolled gateway it records the
+convention on the gateway span.
+
 ## Guided onboarding — walk the user through this
 
 When the user wants to onboard their codebase (or reports lost/truncated/detached tool
@@ -44,16 +54,21 @@ stdlib, so just run it. Don't dump the whole pipeline at once; pause at each gat
 2. **Confirm the boundaries.** Show the user the discovered descriptors in plain language
    ("found your gateway `X`, and 3 tools: …"). Get a yes before they're committed to
    `gigaphone.boundaries.yaml`.
-3. **Explain what's wrong.** Run `gigaphone plan`; summarize per tool which failure mode it
-   has (untraced / off_context / lossy_output) and what the fix will do.
+3. **Explain what's wrong.** Run `gigaphone plan`; summarize per boundary (LLM gateway +
+   each tool) which failure mode it has (untraced / off_context / lossy_output) and what
+   the fix does.
 4. **Show the diffs.** Run `gigaphone fix` (without `--apply` to preview, then `--apply`);
    present each codemod as a reviewable diff and get approval before applying. The edits are
    idempotent — re-running changes nothing.
-5. **Prove it.** Run `gigaphone verify`; report the result ("3/3 tool spans now nested +
-   complete") and the trace link. If anything is still ✗, say so — never claim coverage
-   without verify.
-6. **Wrap up.** Tell them to commit `gigaphone.boundaries.yaml` so future/CI runs are
-   deterministic, and that the post-edit hook will flag any newly-added untraced tool.
+5. **Prove it end-to-end.** Run `gigaphone verify`; it runs a full agent turn and proves
+   **one coherent trace tree** — a single agent root with every LLM and tool span nested +
+   complete, and each requested tool causally linked to its span. If anything is still ✗
+   (orphan, missing convention, broken linkage), say so — never claim coverage without verify.
+6. **Wrap up.** `verify`/`onboard` also writes `docs/gigaphone/report.md` (problems +
+   changes + verification) and `docs/gigaphone/architecture.md` (the integrated telemetry
+   architecture). Tell them to commit those plus `gigaphone.boundaries.yaml` so future/CI
+   runs are deterministic, and that the post-edit hook will flag any newly-added untraced
+   tool or gateway.
 
 The engine is pure stdlib and runs on a bare `python3` — no install step; just invoke it.
 
@@ -98,7 +113,8 @@ the dangerous failure.
 
 ## Done means verified
 
-A tool is "covered" only after `gigaphone verify` confirms its span is nested and
-complete in the backend — not because a codemod was applied. Finish by reporting coverage
-before/after and the verified trace link, and remind the user to commit
-`gigaphone.boundaries.yaml` for deterministic / CI runs.
+A boundary (LLM or tool) is "covered" only after `gigaphone verify` confirms its span is
+nested and complete **and part of one coherent trace tree** — not because a codemod was
+applied. Finish by reporting coverage before/after and the verified trace link, point the
+user at the generated `docs/gigaphone/report.md` and `architecture.md`, and remind them to
+commit those plus `gigaphone.boundaries.yaml` for deterministic / CI runs.

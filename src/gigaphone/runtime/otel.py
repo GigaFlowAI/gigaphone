@@ -93,3 +93,68 @@ def gigaphone_propagate(executor):
 def gigaphone_complete(span, value: Any, fields: Iterable[str] = ()) -> None:
     """Record the complete output on an already-open span (lossy_output fix)."""
     _record_output(span, value, fields)
+
+
+# --- LLM convention primitives (OpenInference llm.* attributes) ----------------------
+# An LLM span is "complete" when it carries the OpenInference convention: input messages,
+# output messages, model name, token usage, and any tool calls the model requested. The
+# two LLM fixes below emit exactly that — `gigaphone_llm_complete` augments an existing
+# span (lossy_output), `gigaphone_llm_trace` wraps an untraced gateway.
+
+
+def _record_llm(span, *, messages, response, model, usage) -> None:
+    if model is not None:
+        span.set_attribute("llm.model_name", model if isinstance(model, str) else _stringify(model))
+    span.set_attribute("llm.input_messages", _stringify(messages))
+    span.set_attribute("llm.output_messages", _stringify(response))
+    if usage is None:
+        usage = _resolve(response, "usage")
+    if usage:
+        getter = usage.get if isinstance(usage, dict) else (lambda k: _resolve(usage, k))
+        prompt = getter("prompt")
+        completion = getter("completion")
+        if prompt is not None:
+            span.set_attribute("llm.token_count.prompt", prompt)
+        if completion is not None:
+            span.set_attribute("llm.token_count.completion", completion)
+    tool_calls = _resolve(response, "tool_calls")
+    if tool_calls is None:
+        tool_calls = _resolve(response, "tool_call")  # singular gateways (one call per turn)
+    if tool_calls:
+        span.set_attribute("llm.tool_calls", _stringify(tool_calls))
+
+
+def gigaphone_llm_complete(span, *, messages, response, model=None, usage=None) -> None:
+    """Record the complete OpenInference LLM convention on an already-open gateway span
+    (lossy_output fix for a hand-rolled gateway that traced only partial attributes)."""
+    _record_llm(span, messages=messages, response=response, model=model, usage=usage)
+
+
+def gigaphone_llm_trace(
+    name: str, *, model_attr: str | None = None, messages_arg: str = "messages"
+):
+    """Decorator: trace a previously-untraced LLM gateway call, recording the convention.
+
+    The span opens in the current context (so it nests under the agent). The model name is
+    read from the bound instance's ``model_attr`` when given; messages from ``messages_arg``
+    (kwarg or first positional after self); usage/tool_calls from the return value."""
+
+    def deco(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            tracer = trace.get_tracer("gigaphone")
+            messages = kwargs.get(messages_arg)
+            if messages is None and len(args) >= 2:
+                messages = args[1]
+            model = getattr(args[0], model_attr, None) if (model_attr and args) else None
+            with tracer.start_as_current_span(name) as span:
+                span.set_attribute("gigaphone.kind", "llm")
+                result = fn(*args, **kwargs)
+                usage = _resolve(result, "usage")
+                _record_llm(span, messages=messages, response=result, model=model, usage=usage)
+                return result
+
+        wrapper.__gigaphone_traced__ = True  # type: ignore[attr-defined]
+        return wrapper
+
+    return deco

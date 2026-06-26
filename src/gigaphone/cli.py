@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections.abc import Sequence
 
@@ -151,15 +152,23 @@ def _cmd_fix(args) -> int:
     return 0
 
 
+# both LLM gateway and tool boundaries are verified — every call in the agent loop.
+_VERIFIABLE = ("tool_exec", "llm")
+
+
 def _cmd_verify(args) -> int:
     descriptors = config.load(args.repo)
     boundaries = _detect.detect(args.repo, descriptors, None)
     backend = select_backend(args.repo, args.backend)
-    expectations = [backend.expectation_for(b) for b in boundaries if b.kind.value == "tool_exec"]
-    results = _verify.verify(args.repo, expectations, backend, args.module)
-    for v in results:
-        print(f"  {'✓' if v.ok else '✗'} {v.tool}: {'nested + complete' if v.ok else v.detail}")
-    return 0 if all(v.ok for v in results) else 1
+    expectations = [backend.expectation_for(b) for b in boundaries if b.kind.value in _VERIFIABLE]
+    tree = _verify.verify_tree(args.repo, expectations, backend, args.module)
+    for v in tree.results:
+        print(
+            f"  {'✓' if v.ok else '✗'} [{v.kind}] {v.tool}: "
+            f"{'nested + complete' if v.ok else v.detail}"
+        )
+    print(f"  trace tree: {'single root ✓' if tree.single_root else 'multiple roots ✗'}")
+    return 0 if tree.ok else 1
 
 
 def _cmd_onboard(args) -> int:
@@ -168,20 +177,32 @@ def _cmd_onboard(args) -> int:
     config.save(args.repo, descriptors)
     boundaries = _detect.detect(args.repo, descriptors, args.scope)
     plan = build_plan(descriptors, boundaries)
-    expectations = [backend.expectation_for(b) for b in boundaries if b.kind.value == "tool_exec"]
-    _fix.apply_fixes(args.repo, boundaries, backend)
-    results = _verify.verify(args.repo, expectations, backend, args.module)
+    expectations = [backend.expectation_for(b) for b in boundaries if b.kind.value in _VERIFIABLE]
+    fix_result = _fix.apply_fixes(args.repo, boundaries, backend)
+    tree = _verify.verify_tree(args.repo, expectations, backend, args.module)
     print(
         _report.render(
             harness="cli",
             language="python",
             backend=backend.id,
             plan=plan,
-            verify_results=results,
+            verify_results=tree.results,
             trace_link=None,
         )
     )
-    return 0 if all(v.ok for v in results) else 1
+    paths = _report.write_docs(
+        args.repo,
+        harness="cli",
+        language="python",
+        backend=backend.id,
+        descriptors=descriptors,
+        plan=plan,
+        fix_result=fix_result,
+        tree=tree,
+    )
+    rels = [os.path.relpath(p, args.repo) for p in paths]
+    print("Wrote " + " and ".join(rels))
+    return 0 if tree.ok else 1
 
 
 if __name__ == "__main__":  # pragma: no cover

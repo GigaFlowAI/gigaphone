@@ -14,8 +14,15 @@ import subprocess
 import sys
 import tempfile
 
-from gigaphone.core.boundary import FailureMode
-from gigaphone.core.model import Boundary, Expectation, FixPrimitive, VerifyResult
+from gigaphone.core.boundary import LLM_CONVENTION_ATTRS, BoundaryKind, FailureMode
+from gigaphone.core.model import (
+    Boundary,
+    Expectation,
+    FixPrimitive,
+    LinkageResult,
+    TreeVerifyResult,
+    VerifyResult,
+)
 from gigaphone.interfaces.backend_adapter import BackendAdapter
 
 _SHIM = "gigaphone.runtime.otel"
@@ -62,6 +69,8 @@ class OtelAdapter(BackendAdapter):
 
     # --- fix primitives (one per failure mode) --------------------------------------
     def primitive_for(self, boundary: Boundary, mode: FailureMode) -> FixPrimitive:
+        if boundary.kind == BoundaryKind.LLM:
+            return self._llm_primitive(boundary, mode)
         if mode == FailureMode.UNTRACED:
             name = boundary.emit_name or f"{boundary.provider_or_framework}.{boundary.func_name}"
             fields = ", ".join(repr(f) for f in boundary.complete_output_fields)
@@ -93,9 +102,70 @@ class OtelAdapter(BackendAdapter):
             )
         raise ValueError(f"no OTel primitive for {mode} (introduce-a-boundary is advisory)")
 
+    def _llm_primitive(self, boundary: Boundary, mode: FailureMode) -> FixPrimitive:
+        """LLM-boundary fixes (Approach A, Path 2 hand-rolled). The hand-rolled gateway gets
+        a gigaphone llm span recording the OpenInference convention; off_context reuses the
+        executor-wrapper. Path 1 (recognized SDK) enables the provider's instrumentor via
+        ``enable_llm_instrumentation`` at the init site instead of editing the call."""
+        name = (
+            boundary.existing_span_name
+            or boundary.emit_name
+            or f"{boundary.provider_or_framework}.llm"
+        )
+        if mode == FailureMode.LOSSY_OUTPUT:
+            return FixPrimitive(
+                failure_mode=mode,
+                backend_id=self.id,
+                import_line=f"from {_SHIM} import gigaphone_llm_complete",
+                emit_name=name,
+            )
+        if mode == FailureMode.UNTRACED:
+            attr = boundary.llm_model_attr
+            arg = boundary.llm_messages_arg or "messages"
+            emit = boundary.emit_name or f"{boundary.provider_or_framework}.llm"
+            decorator = (
+                f'gigaphone_llm_trace(name="{emit}", model_attr={attr!r}, messages_arg={arg!r})'
+            )
+            return FixPrimitive(
+                failure_mode=mode,
+                backend_id=self.id,
+                import_line=f"from {_SHIM} import gigaphone_llm_trace",
+                emit_name=emit,
+                decorator=decorator,
+            )
+        if mode == FailureMode.OFF_CONTEXT:
+            return FixPrimitive(
+                failure_mode=mode,
+                backend_id=self.id,
+                import_line=f"from {_SHIM} import gigaphone_propagate",
+                emit_name=name,
+                executor_wrapper="gigaphone_propagate",
+            )
+        raise ValueError(f"no OTel LLM primitive for {mode}")
+
+    def enable_llm_instrumentation(self, provider: str) -> tuple[str, str]:
+        """Path 1: the import + init lines that enable a recognized provider's OpenInference
+        instrumentor (emits the full LLM convention for free). Placed at the telemetry-init
+        site by ``fix``. Returns (import_line, init_line)."""
+        cls = {
+            "openai": "OpenAIInstrumentor",
+            "anthropic": "AnthropicInstrumentor",
+            "langchain": "LangChainInstrumentor",
+        }.get(provider)
+        if cls is None:
+            raise ValueError(f"no OpenInference instrumentor known for provider {provider!r}")
+        module = f"openinference.instrumentation.{provider}"
+        return (f"from {module} import {cls}", f"{cls}().instrument()")
+
     def expectation_for(self, boundary: Boundary) -> Expectation:
         """What this boundary's span must look like post-fix — derivable whether or not the
         boundary still carries a failure mode, so ``verify`` is stateless (ADR-0005)."""
+        if boundary.kind == BoundaryKind.LLM:
+            span_name = boundary.existing_span_name or boundary.emit_name or boundary.func_name
+            attrs = list(LLM_CONVENTION_ATTRS) if boundary.requires_llm_convention else []
+            return Expectation(
+                boundary.func_name, span_name, require_nested=True, require_attrs=attrs, kind="llm"
+            )
         tool = boundary.tools_covered[0] if boundary.tools_covered else boundary.func_name
         span_name = boundary.existing_span_name or boundary.emit_name or boundary.func_name
         attrs = (
@@ -141,16 +211,67 @@ class OtelAdapter(BackendAdapter):
                 results.append(VerifyResult(exp.tool, False, False, False, "span not found"))
                 continue
             span = matches[-1]
-            nested = (not exp.require_nested) or _is_descendant(span, agent_id, by_id)
-            missing = [a for a in exp.require_attrs if a not in span.get("attributes", {})]
-            complete = not missing
-            problems = []
-            if not nested:
-                problems.append("orphan")
-            if missing:
-                problems.append("missing " + ",".join(missing))
-            results.append(VerifyResult(exp.tool, True, nested, complete, " ".join(problems)))
+            results.append(_evaluate([span], exp, agent_id, by_id))
         return results
+
+    def verify_tree(self, project, run) -> TreeVerifyResult:
+        """End-to-end proof of one coherent trace tree: a single root agent span with every
+        LLM and tool span (ALL occurrences) nested + complete, and each requested tool
+        causally linked to its span (this feature; DESIGN §12)."""
+        repo = project["repo"]
+        module = project.get("module", "app.run_representative")
+        root = project.get("root", repo)
+        expectations: list[Expectation] = run
+
+        spans = _run_and_capture(repo, root, module)
+        by_id = {s["span_id"]: s for s in spans}
+        roots = [s for s in spans if s.get("parent_id") is None]
+        single_root = len(roots) == 1
+        agent = next((s for s in roots if s["name"] == "agent"), roots[0] if roots else None)
+        agent_id = agent["span_id"] if agent else None
+        root_name = agent["name"] if agent else None
+
+        # every occurrence of each expected span must be nested + complete (e.g. all llm turns)
+        results = [
+            _evaluate([s for s in spans if s["name"] == exp.span_name], exp, agent_id, by_id)
+            for exp in expectations
+        ]
+
+        # causal linkage: a tool the model requested (recorded on some llm span's tool_calls)
+        # must have a nested + complete span in this tree.
+        tool_calls_text = " ".join(
+            str(s.get("attributes", {}).get("llm.tool_calls", "")) for s in spans
+        )
+        ok_tools = {r.tool for r in results if r.ok and r.kind != "llm"}
+        linkage = [
+            LinkageResult(exp.tool, (exp.tool in tool_calls_text) and (exp.tool in ok_tools))
+            for exp in expectations
+            if exp.kind != "llm"
+        ]
+        return TreeVerifyResult(
+            single_root=single_root,
+            root_span_name=root_name,
+            results=results,
+            linkage=linkage,
+        )
+
+
+def _evaluate(matches: list, exp: Expectation, agent_id, by_id: dict) -> VerifyResult:
+    """Evaluate an expectation against all matching spans: present, every match nested, and
+    every required attr present on every match."""
+    if not matches:
+        return VerifyResult(exp.tool, False, False, False, "span not found", kind=exp.kind)
+    nested = all((not exp.require_nested) or _is_descendant(s, agent_id, by_id) for s in matches)
+    missing = sorted(
+        {a for s in matches for a in exp.require_attrs if a not in s.get("attributes", {})}
+    )
+    complete = not missing
+    problems = []
+    if not nested:
+        problems.append("orphan")
+    if missing:
+        problems.append("missing " + ",".join(missing))
+    return VerifyResult(exp.tool, True, nested, complete, " ".join(problems), kind=exp.kind)
 
 
 def _is_descendant(span: dict, ancestor_id, by_id: dict) -> bool:

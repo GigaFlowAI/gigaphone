@@ -3,6 +3,7 @@
 The registry (a module-level dict mapping tool name -> callable) is a built-in dispatch
 anchor (DESIGN §7.1) that GigaPhone discovery enumerates to find the tool boundaries.
 """
+
 from __future__ import annotations
 
 from app.exec_tool import run_code
@@ -39,6 +40,10 @@ def run_agent(task: str) -> str:
             tool = TOOLS[reply.tool_call.name]
             result = tool(**reply.tool_call.arguments)  # consumption boundary call site
             messages.append(
-                Message("tool", content=_to_model_content(result), tool_call_id=reply.tool_call.name)
+                Message(
+                    "tool",
+                    content=_to_model_content(result),
+                    tool_call_id=reply.tool_call.name,
+                )
             )
         return "stopped: reached step limit"

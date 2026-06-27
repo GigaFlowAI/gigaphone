@@ -50,3 +50,7 @@ npm test                     # vitest run  (or: npx vitest run)
 Plan → execute one task → verify with tests before declaring done. Keep `AGENTS.md`
 and ADRs current when a rule or boundary changes; broken pointers fail loudly,
 stale prose rots silently.
+
+"Own a PR through to merge" = `/own-through-merge [PR]` (`.claude/commands/`): loop on CI +
+reviewer comments until the PR is actually merged with all feedback addressed — never merge
+on green-CI alone.

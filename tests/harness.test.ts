@@ -26,7 +26,7 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // tests/ -> ts/ -> repo root
-const _REPO_ROOT = join(__dirname, "..", "..");
+const _REPO_ROOT = join(__dirname, "..");
 
 function pkgVersion(root: string): string {
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf-8")) as {
@@ -94,7 +94,7 @@ it("committed plugin files match the single source", () => {
 });
 
 it("plugin version is single-sourced from the package", () => {
-  expect(resolveVersion()).toBe(pkgVersion(join(_REPO_ROOT, "ts")));
+  expect(resolveVersion()).toBe(pkgVersion(_REPO_ROOT));
   expect(PLUGIN.version).toBe(resolveVersion());
   expect(renderClaudeCode()["plugin.json"].version).toBe(resolveVersion());
   expect(renderCodex()["plugin.toml"].version).toBe(resolveVersion());

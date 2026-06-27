@@ -23,7 +23,7 @@ import { applyFixes } from "../src/engine/fix.js";
 import type { VerifyProject } from "../src/interfaces/backendAdapter.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO = join(HERE, "..", "..");
+const REPO = join(HERE, "..");
 const TESTCLIENT = join(REPO, "testclient-ts");
 const SHIM = join(HERE, "..", "assets", "runtime", "typescript", "gigaphone-core.mjs");
 

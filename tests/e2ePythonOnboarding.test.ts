@@ -24,7 +24,7 @@ import { applyFixes } from "../src/engine/fix.js";
 import { verify, verifyTree } from "../src/engine/verify.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO = join(HERE, "..", "..");
+const REPO = join(HERE, "..");
 const TESTCLIENT = join(REPO, "testclient", "app");
 
 /** A python exe that can import opentelemetry, or null. */

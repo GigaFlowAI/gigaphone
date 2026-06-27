@@ -20,6 +20,6 @@
     "vendor": ["otel (full + e2e verify)", "braintrust (native, contextvars family)", "langsmith (native, contextvars family)", "logfire (native, OTel family)", "phoenix/arize (native, OTel family)"],
     "codebase": "discovered config (gigaphone.boundaries.yaml)"
   },
-  "next_task": "v2: tree-sitter-backed TS parsing + run the TS pack through a TS testclient e2e; richer interprocedural def-use; package the harness plugins to the marketplaces. (Logfire + Arize/Phoenix backends landed — OTel family, native init/detection, shim reuse.)",
+  "next_task": "v2: tree-sitter-backed TS parsing; package the harness plugins to the marketplaces. (Done: Logfire + Arize/Phoenix backends — OTel family; TS testclient e2e — red->green->idempotent on a real Node run; richer interprocedural def-use — transitive multi-hop helper chaining with an id-keyed cycle guard + depth bound.)",
   "notes": "Structured cross-session state (JSON so agents don't inappropriately edit it). The four fixes (trace_boundary/restore_context/map_output, plus advisory no_boundary) are real and tested. TS pack is parserless (lexical) in v1 per ADR-0007; not yet exercised by an e2e."
 }

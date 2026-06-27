@@ -89,7 +89,7 @@ your trace. See [ADR-0003](docs/adr/0003-trace-the-consumption-boundary.md).
    │     • Boundary config  gigaphone.boundaries.yaml  (discovered per repo)│
    └───────────────────────────────┬───────────────────────────────────────┘
                                     ▼ emit + verify
-     Backend adapter ▶ OTel/OpenInference · Braintrust · LangSmith · any OTLP
+  Backend adapter ▶ OTel · Braintrust · LangSmith · Logfire · Phoenix · any OTLP
                                                             ← Vendor: where spans go
 ```
 

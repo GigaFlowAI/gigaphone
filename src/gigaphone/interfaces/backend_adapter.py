@@ -5,7 +5,8 @@ adapter targets any OTLP backend (new platform = endpoint + headers, no code); n
 adapters (Braintrust, LangSmith) override where native semantics win. Adapters cluster
 into contextvars-native and OTel families and reuse most fix logic within a family.
 
-v1 ships ``otel`` + ``braintrust`` + ``langsmith`` (under ``adapters/backend/``).
+Ships ``otel`` + ``braintrust`` + ``langsmith`` (contextvars-native family) +
+``logfire`` + ``phoenix`` (OTel-native family) under ``adapters/backend/``.
 """
 
 from __future__ import annotations

@@ -2,7 +2,7 @@
   "project": "gigaphone",
   "design_version": "0.4",
   "package_version": "0.5.0",
-  "updated": "2026-06-25",
+  "updated": "2026-06-27",
   "current_milestone": "v1 working end-to-end",
   "milestones": {
     "M0": { "title": "Scaffold", "status": "done" },
@@ -17,9 +17,9 @@
   "axes": {
     "harness": ["claude-code", "codex"],
     "language": ["python (full)", "typescript (lexical v1)"],
-    "vendor": ["otel (full + e2e verify)", "braintrust (native, contextvars family)", "langsmith (native, contextvars family)"],
+    "vendor": ["otel (full + e2e verify)", "braintrust (native, contextvars family)", "langsmith (native, contextvars family)", "logfire (native, OTel family)", "phoenix/arize (native, OTel family)"],
     "codebase": "discovered config (gigaphone.boundaries.yaml)"
   },
-  "next_task": "v2: tree-sitter-backed TS parsing + run the TS pack through a TS testclient e2e; Arize/Phoenix + Logfire backends; richer interprocedural def-use; package the harness plugins to the marketplaces.",
+  "next_task": "v2: tree-sitter-backed TS parsing + run the TS pack through a TS testclient e2e; richer interprocedural def-use; package the harness plugins to the marketplaces. (Logfire + Arize/Phoenix backends landed — OTel family, native init/detection, shim reuse.)",
   "notes": "Structured cross-session state (JSON so agents don't inappropriately edit it). The four fixes (trace_boundary/restore_context/map_output, plus advisory no_boundary) are real and tested. TS pack is parserless (lexical) in v1 per ADR-0007; not yet exercised by an e2e."
 }

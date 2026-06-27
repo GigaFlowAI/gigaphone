@@ -8,3 +8,7 @@ records) is shared. See `src/gigaphone/interfaces/harness_adapter.py` and DESIGN
 - `codex/` — v1. Plugin + marketplace (+ `agents/openai.yaml`); command hooks only.
 
 Keep hooks to plain shell commands and generate both manifests from one source.
+
+Build/verify with `scripts/build_plugins.py` (`--check` is the CI/release freshness gate);
+the render + check logic lives in `gigaphone.adapters.harness.packaging`. The plugin version
+is single-sourced from the package version. See `docs/PUBLISHING.md`.

@@ -15,10 +15,30 @@ connection for no benefit over invoking the CLI directly).
 
 from __future__ import annotations
 
+import re
+from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 from typing import Any
 
+
+def resolve_version() -> str:
+    """The single source of truth for the plugin version: the installed package version,
+    falling back to parsing ``pyproject.toml`` when the package isn't installed (e.g. the
+    plugin's bare-``python3`` hook context). Keeps the shipped manifests from ever drifting
+    from the package version."""
+    try:
+        return version("gigaphone")
+    except PackageNotFoundError:
+        pyproject = Path(__file__).resolve().parents[4] / "pyproject.toml"
+        try:
+            m = re.search(r'(?m)^version\s*=\s*"([^"]+)"', pyproject.read_text(encoding="utf-8"))
+        except OSError:
+            m = None
+        return m.group(1) if m else "0.0.0"
+
+
 NAME = "gigaphone"
-VERSION = "0.5.0"
+VERSION = resolve_version()
 DESCRIPTION = (
     "Trace-coverage instrumentation for AI agent tool executions — "
     "neutral across harness, language, vendor, and codebase."

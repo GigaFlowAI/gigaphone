@@ -2,7 +2,8 @@
 
 Proves the pack loads, discovery finds a hand-rolled gateway + tool registry, analyze
 classifies untraced / off_context / lossy, and emit_fix is byte-accurate + idempotent.
-The TS pack is not run e2e (only Python is); these tests exercise it structurally.
+These tests exercise the pack structurally; the full discover->fix->verify wire path (with
+the real backend adapter + a live Node run) is covered by ``test_e2e_typescript_onboarding``.
 """
 
 from __future__ import annotations
@@ -81,7 +82,9 @@ def _apply(source: str, *edits) -> str:
 
 
 def _primitive(mode: FailureMode, boundary) -> FixPrimitive:
-    """A TS-flavoured OTel primitive (the python OtelAdapter is not wired to this pack)."""
+    """A TS-flavoured OTel primitive. The real ``OtelAdapter.primitive_for(..., "typescript")``
+    now renders these (see ``test_typescript_fix_wiring``); this local copy keeps the pack's
+    placement tests independent of the backend."""
     if mode == FailureMode.UNTRACED:
         fields = ", ".join(repr(f) for f in boundary.complete_output_fields)
         return FixPrimitive(

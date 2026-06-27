@@ -34,7 +34,7 @@ def plan_fixes(root: str, boundaries: list[Boundary], backend) -> FixResult:
             continue
         source = project.read(project.SourceFile(b.path, os.path.join(root, b.path)))
         for mode in b.failure_modes:
-            primitive = backend.primitive_for(b, mode)
+            primitive = backend.primitive_for(b, mode, pack.id)
             edit = pack.emit_fix(b, primitive, source)
             if edit is not None:
                 per_file.setdefault(b.path, []).append(edit)

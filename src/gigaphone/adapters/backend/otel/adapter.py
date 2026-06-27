@@ -25,11 +25,62 @@ from gigaphone.core.model import (
 )
 from gigaphone.interfaces.backend_adapter import BackendAdapter
 
-_SHIM = "gigaphone.runtime.otel"
+
+def _render_pieces(
+    lang: str, shim: str, mode: FailureMode, name: str, span_kind: str, fields
+) -> dict:
+    """Render a backend primitive's language-specific *pieces* (import line + call sites).
+
+    The backend owns the semantics (which shim package, which span kind); this owns the
+    per-language *syntax*. The language pack still owns placement + idempotency (DESIGN §9,
+    §11). Python output is byte-identical to the pre-multi-language adapter.
+    """
+    if lang == "typescript":
+        if mode == FailureMode.UNTRACED:
+            f = ", ".join(f'"{x}"' for x in fields)
+            return {
+                "import_line": f'import {{ gigaphoneTrace }} from "{shim}";',
+                "decorator": (
+                    f'gigaphoneTrace({{ name: "{name}", kind: "{span_kind}", output: [{f}] }})'
+                ),
+            }
+        if mode == FailureMode.OFF_CONTEXT:
+            return {
+                "import_line": f'import {{ gigaphonePropagate }} from "{shim}";',
+                "executor_wrapper": "gigaphonePropagate",
+            }
+        if mode == FailureMode.LOSSY_OUTPUT:
+            return {
+                "import_line": f'import {{ gigaphoneComplete }} from "{shim}";',
+                "attr_setter_template": "gigaphoneComplete({span}, {value}, {fields});",
+            }
+        raise ValueError(f"no OTel primitive for {mode} (introduce-a-boundary is advisory)")
+
+    # python (default)
+    if mode == FailureMode.UNTRACED:
+        f = ", ".join(repr(x) for x in fields)
+        return {
+            "import_line": f"from {shim} import gigaphone_trace",
+            "decorator": f'gigaphone_trace(name="{name}", kind="{span_kind}", output=[{f}])',
+        }
+    if mode == FailureMode.OFF_CONTEXT:
+        return {
+            "import_line": f"from {shim} import gigaphone_propagate",
+            "executor_wrapper": "gigaphone_propagate",
+        }
+    if mode == FailureMode.LOSSY_OUTPUT:
+        return {
+            "import_line": f"from {shim} import gigaphone_complete",
+            "attr_setter_template": "gigaphone_complete({span}, {value}, fields={fields})",
+        }
+    raise ValueError(f"no OTel primitive for {mode} (introduce-a-boundary is advisory)")
 
 
 class OtelAdapter(BackendAdapter):
     id = "otel"
+    # The runtime shim each emitted fix imports, per language. Native adapters override only
+    # this mapping (+ id/detection/init) and inherit the whole fix-routing surface.
+    shim_packages = {"python": "gigaphone.runtime.otel", "typescript": "@gigaphone/otel"}
 
     # --- detection / config ---------------------------------------------------------
     def detect_presence(self, repo) -> bool:
@@ -68,46 +119,53 @@ class OtelAdapter(BackendAdapter):
         )
 
     # --- fix primitives (one per failure mode) --------------------------------------
-    def primitive_for(self, boundary: Boundary, mode: FailureMode) -> FixPrimitive:
+    def primitive_for(
+        self, boundary: Boundary, mode: FailureMode, lang: str = "python"
+    ) -> FixPrimitive:
         if boundary.kind == BoundaryKind.LLM:
-            return self._llm_primitive(boundary, mode)
+            return self._llm_primitive(boundary, mode, lang)
+        shim = self.shim_packages.get(lang, self.shim_packages["python"])
+        name = boundary.emit_name or f"{boundary.provider_or_framework}.{boundary.func_name}"
+        span_kind = "agent" if boundary.kind == BoundaryKind.AGENT_CALL else "tool"
         if mode == FailureMode.UNTRACED:
-            name = boundary.emit_name or f"{boundary.provider_or_framework}.{boundary.func_name}"
-            fields = ", ".join(repr(f) for f in boundary.complete_output_fields)
-            span_kind = "agent" if boundary.kind == BoundaryKind.AGENT_CALL else "tool"
-            decorator = f'gigaphone_trace(name="{name}", kind="{span_kind}", output=[{fields}])'
+            r = _render_pieces(lang, shim, mode, name, span_kind, boundary.complete_output_fields)
             return FixPrimitive(
                 failure_mode=mode,
                 backend_id=self.id,
-                import_line=f"from {_SHIM} import gigaphone_trace",
+                import_line=r["import_line"],
                 emit_name=name,
                 output_fields=tuple(boundary.complete_output_fields),
-                decorator=decorator,
+                decorator=r["decorator"],
             )
         if mode == FailureMode.OFF_CONTEXT:
+            r = _render_pieces(lang, shim, mode, name, span_kind, boundary.complete_output_fields)
             return FixPrimitive(
                 failure_mode=mode,
                 backend_id=self.id,
-                import_line=f"from {_SHIM} import gigaphone_propagate",
+                import_line=r["import_line"],
                 emit_name=boundary.existing_span_name or boundary.func_name,
-                executor_wrapper="gigaphone_propagate",
+                executor_wrapper=r["executor_wrapper"],
             )
         if mode == FailureMode.LOSSY_OUTPUT:
+            r = _render_pieces(lang, shim, mode, name, span_kind, boundary.complete_output_fields)
             return FixPrimitive(
                 failure_mode=mode,
                 backend_id=self.id,
-                import_line=f"from {_SHIM} import gigaphone_complete",
+                import_line=r["import_line"],
                 emit_name=boundary.existing_span_name or boundary.func_name,
                 output_fields=tuple(boundary.complete_output_fields),
-                attr_setter_template="gigaphone_complete({span}, {value}, fields={fields})",
+                attr_setter_template=r["attr_setter_template"],
             )
         raise ValueError(f"no OTel primitive for {mode} (introduce-a-boundary is advisory)")
 
-    def _llm_primitive(self, boundary: Boundary, mode: FailureMode) -> FixPrimitive:
+    def _llm_primitive(
+        self, boundary: Boundary, mode: FailureMode, lang: str = "python"
+    ) -> FixPrimitive:
         """LLM-boundary fixes (Approach A, Path 2 hand-rolled). The hand-rolled gateway gets
         a gigaphone llm span recording the OpenInference convention; off_context reuses the
         executor-wrapper. Path 1 (recognized SDK) enables the provider's instrumentor via
         ``enable_llm_instrumentation`` at the init site instead of editing the call."""
+        shim = self.shim_packages.get(lang, self.shim_packages["python"])
         name = (
             boundary.existing_span_name
             or boundary.emit_name
@@ -117,7 +175,7 @@ class OtelAdapter(BackendAdapter):
             return FixPrimitive(
                 failure_mode=mode,
                 backend_id=self.id,
-                import_line=f"from {_SHIM} import gigaphone_llm_complete",
+                import_line=f"from {shim} import gigaphone_llm_complete",
                 emit_name=name,
             )
         if mode == FailureMode.UNTRACED:
@@ -130,7 +188,7 @@ class OtelAdapter(BackendAdapter):
             return FixPrimitive(
                 failure_mode=mode,
                 backend_id=self.id,
-                import_line=f"from {_SHIM} import gigaphone_llm_trace",
+                import_line=f"from {shim} import gigaphone_llm_trace",
                 emit_name=emit,
                 decorator=decorator,
             )
@@ -138,7 +196,7 @@ class OtelAdapter(BackendAdapter):
             return FixPrimitive(
                 failure_mode=mode,
                 backend_id=self.id,
-                import_line=f"from {_SHIM} import gigaphone_propagate",
+                import_line=f"from {shim} import gigaphone_propagate",
                 emit_name=name,
                 executor_wrapper="gigaphone_propagate",
             )
@@ -201,9 +259,11 @@ class OtelAdapter(BackendAdapter):
         repo = project["repo"]
         module = project.get("module", "app.run_representative")
         root = project.get("root", repo)
+        lang = project.get("lang", "python")
+        entry = project.get("entry")
         expectations: list[Expectation] = run
 
-        spans = _run_and_capture(repo, root, module)
+        spans = _run_and_capture(repo, root, module, lang, entry)
         by_id = {s["span_id"]: s for s in spans}
         roots = [s for s in spans if s.get("parent_id") is None]
         agent = next((s for s in roots if s["name"] == "agent"), roots[0] if roots else None)
@@ -226,9 +286,11 @@ class OtelAdapter(BackendAdapter):
         repo = project["repo"]
         module = project.get("module", "app.run_representative")
         root = project.get("root", repo)
+        lang = project.get("lang", "python")
+        entry = project.get("entry")
         expectations: list[Expectation] = run
 
-        spans = _run_and_capture(repo, root, module)
+        spans = _run_and_capture(repo, root, module, lang, entry)
         by_id = {s["span_id"]: s for s in spans}
         roots = [s for s in spans if s.get("parent_id") is None]
         single_root = len(roots) == 1
@@ -291,15 +353,27 @@ def _is_descendant(span: dict, ancestor_id, by_id: dict) -> bool:
     return False
 
 
-def _run_and_capture(repo: str, root: str, module: str) -> list[dict]:
+def _run_and_capture(
+    repo: str, root: str, module: str, lang: str = "python", entry: str | None = None
+) -> list[dict]:
+    """Run the representative path and read back the spans it exported as JSONL.
+
+    Language-neutral on the read side (the shim emits the same span shape everywhere); only
+    the *launch* differs — ``python -m <module>`` for Python, ``node <entry>`` for TypeScript
+    (Node resolves ``@gigaphone/*`` from the project's own ``node_modules``).
+    """
     fd, span_file = tempfile.mkstemp(suffix=".jsonl", prefix="gigaphone_spans_")
     os.close(fd)
     open(span_file, "w").close()
     env = dict(os.environ)
     env["GIGAPHONE_SPAN_FILE"] = span_file
-    env["PYTHONPATH"] = os.pathsep.join(filter(None, [root, env.get("PYTHONPATH", "")]))
+    if lang == "typescript":
+        argv = ["node", entry or "run_representative.mjs"]
+    else:
+        env["PYTHONPATH"] = os.pathsep.join(filter(None, [root, env.get("PYTHONPATH", "")]))
+        argv = [sys.executable, "-m", module]
     proc = subprocess.run(
-        [sys.executable, "-m", module],
+        argv,
         cwd=repo,
         env=env,
         capture_output=True,

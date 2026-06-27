@@ -12,6 +12,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+      - name: Set up Node (>=23.6 for the TypeScript e2e's .ts type-stripping)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
       - name: Lint
         run: uv run --extra dev ruff check src tests
       - name: Format check

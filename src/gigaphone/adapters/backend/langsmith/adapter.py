@@ -15,17 +15,19 @@ Mapping of the three fixable failure modes to native semantics (via the shim):
 from __future__ import annotations
 
 import os
-from dataclasses import replace
 
 from gigaphone.adapters.backend.otel.adapter import OtelAdapter
-from gigaphone.core.boundary import FailureMode
-from gigaphone.core.model import Boundary, FixPrimitive
-
-_SHIM = "gigaphone.runtime.langsmith"
 
 
 class LangSmithAdapter(OtelAdapter):
     id = "langsmith"
+    # Identical placement + call sites as the OTel family; only the imported shim (per
+    # language) and the backend id differ. The whole primitive_for / verify surface is
+    # inherited from OtelAdapter, which reads self.shim_packages + self.id.
+    shim_packages = {
+        "python": "gigaphone.runtime.langsmith",
+        "typescript": "@gigaphone/langsmith",
+    }
 
     def detect_presence(self, repo) -> bool:
         return _scan_for_import(str(repo), "langsmith")
@@ -37,16 +39,6 @@ class LangSmithAdapter(OtelAdapter):
         return (
             "import langsmith  # tracing is enabled via LANGCHAIN_TRACING_V2=true\n"
             "_ls_client = langsmith.Client()\n"
-        )
-
-    def primitive_for(self, boundary: Boundary, mode: FailureMode) -> FixPrimitive:
-        # Identical placement + call sites as the OTel family; only the imported shim and the
-        # backend id differ (the decorator/wrapper/setter names are shim-agnostic).
-        base = super().primitive_for(boundary, mode)
-        return replace(
-            base,
-            backend_id=self.id,
-            import_line=base.import_line.replace("gigaphone.runtime.otel", _SHIM),
         )
 
 

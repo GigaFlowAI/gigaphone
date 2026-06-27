@@ -22,6 +22,7 @@ from gigaphone.engine import resolve as _resolve
 from gigaphone.engine import verify as _verify
 from gigaphone.engine.plan import build_plan
 from gigaphone.engine.review import apply_review
+from gigaphone.packs.registry import pack_for_path
 
 COMMANDS: list[tuple[str, str]] = [
     ("discover", "scan (optionally --scope) → propose boundary descriptors → write config"),
@@ -183,12 +184,23 @@ def _cmd_fix(args) -> int:
 _VERIFIABLE = ("tool_exec", "agent_call", "llm")
 
 
+def _lang_of(repo: str, boundaries) -> str:
+    """The language of the boundaries (drives how `verify` launches the representative path)."""
+    for b in boundaries:
+        pack = pack_for_path(os.path.join(repo, b.path))
+        if pack is not None:
+            return pack.id
+    return "python"
+
+
 def _cmd_verify(args) -> int:
     descriptors = config.load(args.repo)
     boundaries = _detect.detect(args.repo, descriptors, None)
     backend = select_backend(args.repo, args.backend)
+    lang = _lang_of(args.repo, boundaries)
+    entry = args.module if lang != "python" else None
     expectations = [backend.expectation_for(b) for b in boundaries if b.kind.value in _VERIFIABLE]
-    tree = _verify.verify_tree(args.repo, expectations, backend, args.module)
+    tree = _verify.verify_tree(args.repo, expectations, backend, args.module, lang, entry)
     for v in tree.results:
         print(
             f"  {'✓' if v.ok else '✗'} [{v.kind}] {v.tool}: "
@@ -204,13 +216,15 @@ def _cmd_onboard(args) -> int:
     config.save(args.repo, descriptors)
     boundaries = _detect.detect(args.repo, descriptors, args.scope)
     plan = build_plan(descriptors, boundaries)
+    lang = _lang_of(args.repo, boundaries)
+    entry = args.module if lang != "python" else None
     expectations = [backend.expectation_for(b) for b in boundaries if b.kind.value in _VERIFIABLE]
     fix_result = _fix.apply_fixes(args.repo, boundaries, backend)
-    tree = _verify.verify_tree(args.repo, expectations, backend, args.module)
+    tree = _verify.verify_tree(args.repo, expectations, backend, args.module, lang, entry)
     print(
         _report.render(
             harness="cli",
-            language="python",
+            language=lang,
             backend=backend.id,
             plan=plan,
             verify_results=tree.results,
@@ -220,7 +234,7 @@ def _cmd_onboard(args) -> int:
     paths = _report.write_docs(
         args.repo,
         harness="cli",
-        language="python",
+        language=lang,
         backend=backend.id,
         descriptors=descriptors,
         plan=plan,

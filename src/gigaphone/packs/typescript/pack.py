@@ -394,6 +394,16 @@ class TypeScriptPack(LanguagePack):
         return b
 
     # --------------------------------------------------------------------- fix emission
+    def _locate_fn(self, source: str, boundary: Boundary) -> _Func | None:
+        """Re-find the boundary's function in the current source snapshot, preferring the one
+        whose header byte matches ``decorator_insert_byte`` (set during analyze) so same-named
+        methods in sibling classes don't collide."""
+        target = boundary.decorator_insert_byte
+        for f in _scan_functions(source):
+            if _byte(source, f.header_char) == target:
+                return f
+        return next((f for f in _scan_functions(source) if f.name == boundary.func_name), None)
+
     def emit_fix(self, boundary: Boundary, primitive: FixPrimitive, source: str) -> CodeEdit | None:
         import_byte = _import_insert_offset(source)
         import_hunk = Hunk(
@@ -404,13 +414,28 @@ class TypeScriptPack(LanguagePack):
             primitive.failure_mode == FailureMode.UNTRACED
             and boundary.decorator_insert_byte is not None
         ):
-            at = boundary.decorator_insert_byte
-            indent = boundary.insert_indent or ""
+            # TS has no portable function decorator, so trace by wrapping the body in the
+            # curried `gigaphoneTrace(opts)(fn)` higher-order call. Async-correct: the arrow
+            # mirrors the boundary's own async-ness, and the shim awaits a returned promise
+            # before recording output + ending the span. `this`/`super` survive (arrow).
+            fn = self._locate_fn(source, boundary)
+            if fn is None:
+                return None
+            header = source[fn.header_char : fn.body_open]
+            arrow = "async () =>" if re.search(r"\basync\b", header) else "() =>"
             tag = f"gigaphone:trace:{boundary.func_name}"
-            deco = f"{indent}// @{primitive.decorator}  // {tag}\n"
+            end_tag = f"{tag}:end"
+            open_at = _byte(source, fn.body_open + 1)
+            close_at = _byte(source, fn.body_close)
+            open_text = f" return {primitive.decorator}({arrow} {{ /* {tag} */"
+            close_text = f" }}); /* {end_tag} */"
             return CodeEdit(
                 boundary.path,
-                [import_hunk, Hunk(at, at, deco, tag)],
+                [
+                    import_hunk,
+                    Hunk(open_at, open_at, open_text, tag),
+                    Hunk(close_at, close_at, close_text, end_tag),
+                ],
                 f"trace untraced boundary `{boundary.func_name}` ({primitive.backend_id})",
             )
 
@@ -537,7 +562,12 @@ def _infer_output_fields(source: str, fn: _Func) -> list[str]:
 
 
 def _import_insert_offset(source: str) -> int:
-    """After the leading block/line comment header and any leading imports, else top."""
+    """After the leading block/line comment header and any leading imports, else top.
+
+    Imports may span several physical lines (``import {\\n  a,\\n  b,\\n} from "x";``), so we
+    consume a whole import statement — not just its first line — to avoid inserting *inside*
+    an import block (which would corrupt it).
+    """
     idx = 0
     n = len(source)
     # skip a leading block comment
@@ -546,12 +576,29 @@ def _import_insert_offset(source: str) -> int:
         if end != -1:
             idx = source.find("\n", end)
             idx = idx + 1 if idx != -1 else end + 2
-    # skip a run of leading import lines
-    for line in source[idx:].splitlines(keepends=True):
-        if line.strip().startswith(("import ", "//", "/*", "*", "*/")) or not line.strip():
-            idx += len(line)
-        else:
-            break
+
+    lines = source[idx:].splitlines(keepends=True)
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].strip()
+        if stripped == "" or stripped.startswith(("//", "/*", "*", "*/")):
+            idx += len(lines[i])
+            i += 1
+            continue
+        if stripped.startswith("import"):
+            # consume lines until this import statement terminates: a line ending in `;`
+            # or a quote (ASI), or a `} from "..."` closer for a multi-line member list.
+            while i < len(lines):
+                idx += len(lines[i])
+                tail = lines[i].rstrip()
+                done = tail.endswith((";", '"', "'")) or (
+                    "from " in lines[i] and ('"' in lines[i] or "'" in lines[i])
+                )
+                i += 1
+                if done:
+                    break
+            continue
+        break
     return _byte(source, idx)
 
 

@@ -11,10 +11,12 @@ def verify(
     expectations: list[Expectation],
     backend,
     module: str = "app.run_representative",
+    lang: str = "python",
+    entry: str | None = None,
 ) -> list[VerifyResult]:
     if not expectations:
         return []
-    project_ctx = {"repo": root, "root": root, "module": module}
+    project_ctx = {"repo": root, "root": root, "module": module, "lang": lang, "entry": entry}
     return backend.verify(project_ctx, expectations)
 
 
@@ -23,10 +25,12 @@ def verify_tree(
     expectations: list[Expectation],
     backend,
     module: str = "app.run_representative",
+    lang: str = "python",
+    entry: str | None = None,
 ) -> TreeVerifyResult:
     """End-to-end: prove one representative run yields a single coherent trace tree with
     every LLM + tool span nested + complete and each requested tool linked (this feature)."""
     if not expectations:
         return TreeVerifyResult(single_root=False, root_span_name=None, detail="no expectations")
-    project_ctx = {"repo": root, "root": root, "module": module}
+    project_ctx = {"repo": root, "root": root, "module": module, "lang": lang, "entry": entry}
     return backend.verify_tree(project_ctx, expectations)

@@ -22,7 +22,8 @@ import {
   rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { LLM_CONVENTION_ATTRS } from "../../../core/boundary.js";
 import { BoundaryKind, type FailureMode, FailureMode as FM } from "../../../core/boundary.js";
 import {
@@ -359,7 +360,9 @@ function runAndCapture(project: VerifyProject): RawSpan[] {
   if (lang === "typescript") {
     argv = ["node", entry ?? "run_representative.mjs"];
   } else {
-    env.PYTHONPATH = [root, env.PYTHONPATH ?? ""].filter(Boolean).join(delimiter);
+    // PYTHONPATH = target repo + the bundled python runtime-shim assets (so the instrumented
+    // code's `import gigaphone.runtime.otel` resolves), then any inherited path.
+    env.PYTHONPATH = [root, pythonShimDir(), env.PYTHONPATH ?? ""].filter(Boolean).join(delimiter);
     argv = [pythonExe(), "-m", module];
   }
   const proc = spawnSync(argv[0]!, argv.slice(1), {
@@ -383,6 +386,13 @@ function runAndCapture(project: VerifyProject): RawSpan[] {
 
 function pythonExe(): string {
   return process.env.GIGAPHONE_PYTHON ?? "python3";
+}
+
+/** Dir holding the bundled python runtime shims (`gigaphone/runtime/*.py`) as an importable package. */
+function pythonShimDir(): string {
+  // src/adapters/backend/otel/adapter.ts → ../../../../assets/runtime/python
+  const here = dirname(fileURLToPath(import.meta.url));
+  return join(here, "..", "..", "..", "..", "assets", "runtime", "python");
 }
 
 /** Walk files with the given extensions under root; true if any matches the predicate. */

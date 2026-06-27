@@ -8,20 +8,20 @@
  * `gigaphone.runtime.*.py`, which stay Python assets, not the TS engine.
  */
 
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { BoundaryKind, FailureMode as FM } from "../src/core/boundary.js";
-import { Boundary, Range } from "../src/core/model.js";
 import {
-  backendById,
   BraintrustAdapter,
   LangSmithAdapter,
   LogfireAdapter,
   PhoenixAdapter,
+  backendById,
   selectBackend,
 } from "../src/adapters/backend/index.js";
+import { BoundaryKind, FailureMode as FM } from "../src/core/boundary.js";
+import { Boundary, Range } from "../src/core/model.js";
 
 function boundary(): Boundary {
   return new Boundary({

@@ -10,7 +10,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,7 +45,12 @@ function setupProject(): string {
   cpSync(SHIM, join(pkg, "index.mjs"));
   writeFileSync(
     join(pkg, "package.json"),
-    JSON.stringify({ name: "@gigaphone/otel", version: "0.0.0", type: "module", main: "index.mjs" }),
+    JSON.stringify({
+      name: "@gigaphone/otel",
+      version: "0.0.0",
+      type: "module",
+      main: "index.mjs",
+    }),
   );
   return dst;
 }

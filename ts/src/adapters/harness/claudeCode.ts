@@ -8,7 +8,7 @@
  */
 
 import { HarnessAdapter } from "../../interfaces/harnessAdapter.js";
-import { PLUGIN, type ClaudeCodeRender, renderClaudeCode } from "./manifest.js";
+import { type ClaudeCodeRender, PLUGIN, renderClaudeCode } from "./manifest.js";
 
 export class ClaudeCodeAdapter extends HarnessAdapter {
   readonly id = "claude-code";
@@ -31,9 +31,7 @@ export class ClaudeCodeAdapter extends HarnessAdapter {
     // hooks/hooks.json shape — the map is wrapped under a top-level "hooks" key.
     return {
       hooks: {
-        PostToolUse: [
-          { matcher: "Edit|Write", hooks: [{ type: "command", command }] },
-        ],
+        PostToolUse: [{ matcher: "Edit|Write", hooks: [{ type: "command", command }] }],
       },
     };
   }

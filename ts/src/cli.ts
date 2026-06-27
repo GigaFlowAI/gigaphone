@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { selectBackend } from "./adapters/backend/registry.js";
 import * as config from "./config/config.js";
+import type { Boundary } from "./core/model.js";
 import { detect } from "./engine/detect.js";
 import { discover } from "./engine/discover.js";
 import * as fix from "./engine/fix.js";
@@ -19,7 +20,6 @@ import { ingestResolution } from "./engine/resolve.js";
 import { applyReview } from "./engine/review.js";
 import * as verifyEngine from "./engine/verify.js";
 import type { VerifyBackend } from "./engine/verify.js";
-import type { Boundary } from "./core/model.js";
 import { packForPath } from "./packs/registry.js";
 
 const COMMANDS: Array<[string, string]> = [
@@ -50,9 +50,9 @@ interface Args {
 
 function version(): string {
   try {
-    const pkg = JSON.parse(
-      readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
-    ) as { version?: string };
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8")) as {
+      version?: string;
+    };
     return pkg.version ?? "0.0.0";
   } catch {
     return "0.0.0";
@@ -282,9 +282,7 @@ function cmdVerify(args: Args): number {
         `${v.ok ? "nested + complete" : v.detail}\n`,
     );
   }
-  process.stdout.write(
-    `  trace tree: ${tree.singleRoot ? "single root ✓" : "multiple roots ✗"}\n`,
-  );
+  process.stdout.write(`  trace tree: ${tree.singleRoot ? "single root ✓" : "multiple roots ✗"}\n`);
   return tree.ok ? 0 : 1;
 }
 

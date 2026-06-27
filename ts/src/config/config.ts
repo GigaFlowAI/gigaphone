@@ -37,7 +37,5 @@ export function save(repo: string, descriptors: Descriptor[]): string {
 
 /** Committed anchors that no longer resolve anywhere in the code (DESIGN §8.5). */
 export function detectDrift(descriptors: Descriptor[], resolvedMatchCalls: Set<string>): string[] {
-  return descriptors
-    .filter((d) => !resolvedMatchCalls.has(d.matchCall))
-    .map((d) => d.matchCall);
+  return descriptors.filter((d) => !resolvedMatchCalls.has(d.matchCall)).map((d) => d.matchCall);
 }

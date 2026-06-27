@@ -210,7 +210,9 @@ export function unparse(node: Node | null | undefined): string {
       return `{${(node.elts as Node[]).map((e) => unparse(e)).join(", ")}}`;
     case "Dict": {
       const parts = (node.keys as (Node | null)[]).map((k, i) =>
-        k ? `${unparse(k)}: ${unparse((node.values as Node[])[i])}` : `**${unparse((node.values as Node[])[i])}`,
+        k
+          ? `${unparse(k)}: ${unparse((node.values as Node[])[i])}`
+          : `**${unparse((node.values as Node[])[i])}`,
       );
       return `{${parts.join(", ")}}`;
     }

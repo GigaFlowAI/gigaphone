@@ -17,12 +17,7 @@ import { Descriptor, TreeVerifyResult, VerifyResult } from "../src/core/model.js
 import { PlanRecord } from "../src/core/planRecord.js";
 import { FixResult } from "../src/engine/fix.js";
 import { Plan, type Unresolved } from "../src/engine/plan.js";
-import {
-  render,
-  renderArchitectureMd,
-  renderReportMd,
-  writeDocs,
-} from "../src/engine/report.js";
+import { render, renderArchitectureMd, renderReportMd, writeDocs } from "../src/engine/report.js";
 
 function fixture() {
   const records = [
@@ -80,7 +75,11 @@ function fixture() {
       emitName: "anthropic.llm",
       provider: "anthropic",
     }),
-    new Descriptor({ id: "run_code", kind: BoundaryKind.TOOL_EXEC, matchCall: "exec_tool.run_code" }),
+    new Descriptor({
+      id: "run_code",
+      kind: BoundaryKind.TOOL_EXEC,
+      matchCall: "exec_tool.run_code",
+    }),
     new Descriptor({
       id: "web_search",
       kind: BoundaryKind.TOOL_EXEC,

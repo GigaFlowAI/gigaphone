@@ -7,7 +7,7 @@
  */
 
 import { HarnessAdapter } from "../../interfaces/harnessAdapter.js";
-import { PLUGIN, type CodexRender, renderCodex } from "./manifest.js";
+import { type CodexRender, PLUGIN, renderCodex } from "./manifest.js";
 
 export class CodexAdapter extends HarnessAdapter {
   readonly id = "codex";

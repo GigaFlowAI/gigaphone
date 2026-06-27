@@ -36,7 +36,14 @@ const SPAN_STARTERS = [
   "in_scope",
 ];
 // execution sinks: trace the wrapping function, never inside (DESIGN §3)
-const EXEC_SINKS = ["Command::new", "process::Command", ".output(", ".spawn(", ".status(", "Exec::"];
+const EXEC_SINKS = [
+  "Command::new",
+  "process::Command",
+  ".output(",
+  ".spawn(",
+  ".status(",
+  "Exec::",
+];
 // context-hop signatures for Rust's concurrency model (DESIGN §7.1, §10). Work handed to a
 // spawned task / thread-pool worker starts its own span (an orphan root) unless the current
 // span is propagated across the hop.
@@ -49,7 +56,8 @@ const HOP_SIGNATURES = [
   ".execute(",
   "pool.",
 ];
-const POOL_CTOR_RE = /\b(?:[A-Za-z_]\w*::)*[A-Za-z_]*(?:ThreadPool|Pool|Runtime|Executor)\w*::new\s*\(/;
+const POOL_CTOR_RE =
+  /\b(?:[A-Za-z_]\w*::)*[A-Za-z_]*(?:ThreadPool|Pool|Runtime|Executor)\w*::new\s*\(/;
 // a model-facing truncation: `&summary[..60]`, `summary[0..60]`, or `summary.chars().take(60)`
 const SLICE_RE = /&?\s*([A-Za-z_]\w*)\s*\[\s*(?:\d+\s*)?\.\.=?\s*\d+\s*\]/;
 const TAKE_RE = /\b([A-Za-z_]\w*)\s*\.\s*chars\s*\(\s*\)\s*\.\s*take\s*\(/;
@@ -401,7 +409,13 @@ export class RustPack extends LanguagePack {
     return boundaries;
   }
 
-  private analyzeFn(d: Descriptor, fn: Func, module: string, path: string, source: string): Boundary {
+  private analyzeFn(
+    d: Descriptor,
+    fn: Func,
+    module: string,
+    path: string,
+    source: string,
+  ): Boundary {
     const rng = new Range(
       path,
       byteOf(source, fn.headerChar),
@@ -518,10 +532,9 @@ export class RustPack extends LanguagePack {
     ) {
       const at = boundary.spanBlockInsertByte;
       const indent = boundary.insertIndent ?? "";
-      const fields =
-        primitive.outputFields && primitive.outputFields.length
-          ? [...primitive.outputFields]
-          : boundary.completeOutputFields;
+      const fields = primitive.outputFields?.length
+        ? [...primitive.outputFields]
+        : boundary.completeOutputFields;
       const tag = `gigaphone:complete:${boundary.funcName}`;
       const line = (primitive.attrSetterTemplate ?? "")
         .replace("{span}", String(boundary.spanVar))
@@ -529,7 +542,10 @@ export class RustPack extends LanguagePack {
         .replace("{fields}", "&" + pyReprStrList(fields));
       return {
         path: boundary.path,
-        hunks: [importHunk, { byteStart: at, byteEnd: at, newText: `${indent}${line}  // ${tag}\n`, tag }],
+        hunks: [
+          importHunk,
+          { byteStart: at, byteEnd: at, newText: `${indent}${line}  // ${tag}\n`, tag },
+        ],
         description: `record complete output for \`${boundary.funcName}\` (${primitive.backendId})`,
       };
     }
@@ -560,11 +576,7 @@ function targetsModule(matchCall: string, module: string): boolean {
 }
 
 function alreadyFixed(source: string, funcBody: string, name: string): boolean {
-  const byTag = [
-    `gigaphone:trace:${name}`,
-    `gigaphone:ctx:${name}`,
-    `gigaphone:complete:${name}`,
-  ];
+  const byTag = [`gigaphone:trace:${name}`, `gigaphone:ctx:${name}`, `gigaphone:complete:${name}`];
   const byCall = ["gigaphone_trace(", "gigaphone_complete("];
   return byTag.some((t) => source.includes(t)) || byCall.some((c) => funcBody.includes(c));
 }

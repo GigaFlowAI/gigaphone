@@ -23,7 +23,7 @@ import { SourceMap } from "../../core/sourceMap.js";
 import { LanguagePack } from "../../interfaces/languagePack.js";
 import * as agentSdks from "./agentSdks.js";
 import type { AgentSdk } from "./agentSdks.js";
-import { attrChain, type Node, multilineStringInteriorLines, parse, unparse, walk } from "./ast.js";
+import { type Node, attrChain, multilineStringInteriorLines, parse, unparse, walk } from "./ast.js";
 
 // --- built-in anchor catalog (DESIGN §7.1) -------------------------------------------
 // Execution sinks: trace the wrapping function, never inside (DESIGN §3). Matched on the
@@ -128,12 +128,14 @@ export class PythonPack extends LanguagePack {
     // 1) hand-rolled LLM gateway.
     for (const cls of walk(tree)) {
       if (cls.type !== "ClassDef") continue;
-      if (!GATEWAY_CLASS_HINTS.some((h) => (cls.name as string).toLowerCase().includes(h))) continue;
+      if (!GATEWAY_CLASS_HINTS.some((h) => (cls.name as string).toLowerCase().includes(h)))
+        continue;
       for (const m of cls.body as Node[]) {
         if (m.type !== "FunctionDef") continue;
         if (GATEWAY_METHODS.has(m.name)) {
           const arg =
-            ((m.args.args as Node[]).find((a) => INPUT_ARGS.includes(a.arg))?.arg as string) ?? null;
+            ((m.args.args as Node[]).find((a) => INPUT_ARGS.includes(a.arg))?.arg as string) ??
+            null;
           out.push(
             new Descriptor({
               id: `${(cls.name as string).toLowerCase()}-gateway`,
@@ -403,8 +405,7 @@ export class PythonPack extends LanguagePack {
       primitive.failureMode === FailureMode.UNTRACED &&
       boundary.kind === BoundaryKind.AGENT_CALL
     ) {
-      const spanName =
-        boundary.emitName ?? `${boundary.providerOrFramework}.${boundary.funcName}`;
+      const spanName = boundary.emitName ?? `${boundary.providerOrFramework}.${boundary.funcName}`;
       const edit = native_otel_body_wrap(source, boundary.funcName, spanName, "agent");
       if (edit !== null) edit.path = boundary.path;
       return edit;
@@ -437,7 +438,10 @@ export class PythonPack extends LanguagePack {
         `messages=${arg}, response=${resp}, model=${model})`;
       return {
         path: boundary.path,
-        hunks: [importHunk, { byteStart: at, byteEnd: at, newText: `${indent}${call}  # ${tag}\n`, tag }],
+        hunks: [
+          importHunk,
+          { byteStart: at, byteEnd: at, newText: `${indent}${call}  # ${tag}\n`, tag },
+        ],
         description:
           `record the OpenInference LLM convention for \`${boundary.funcName}\` ` +
           `(${primitive.backendId})`,
@@ -464,8 +468,7 @@ export class PythonPack extends LanguagePack {
       return {
         path: boundary.path,
         hunks: [importHunk, { byteStart: start, byteEnd: end, newText, tag }],
-        description:
-          `restore context across the pool for \`${boundary.funcName}\` (${primitive.backendId})`,
+        description: `restore context across the pool for \`${boundary.funcName}\` (${primitive.backendId})`,
       };
     }
 
@@ -475,9 +478,9 @@ export class PythonPack extends LanguagePack {
     ) {
       const at = boundary.spanBlockInsertByte;
       const indent = boundary.insertIndent ?? indent_at(source, at);
-      const fields = (primitive.outputFields && primitive.outputFields.length
-        ? primitive.outputFields
-        : boundary.completeOutputFields) as string[];
+      const fields = (
+        primitive.outputFields?.length ? primitive.outputFields : boundary.completeOutputFields
+      ) as string[];
       const tag = `gigaphone:complete:${boundary.funcName}`;
       const line = formatTemplate(primitive.attrSetterTemplate ?? "", {
         span: boundary.spanVar ?? "",
@@ -486,7 +489,10 @@ export class PythonPack extends LanguagePack {
       });
       return {
         path: boundary.path,
-        hunks: [importHunk, { byteStart: at, byteEnd: at, newText: `${indent}${line}  # ${tag}\n`, tag }],
+        hunks: [
+          importHunk,
+          { byteStart: at, byteEnd: at, newText: `${indent}${line}  # ${tag}\n`, tag },
+        ],
         description: `record complete output for \`${boundary.funcName}\` (${primitive.backendId})`,
       };
     }
@@ -504,9 +510,7 @@ function basename(seg: string): string {
 function module_name(path: string): string {
   let parts = path.replace(/\\/g, "/").split("/");
   const lastIdx = parts.length - 1;
-  parts[lastIdx] = parts[lastIdx]!.endsWith(".py")
-    ? parts[lastIdx]!.slice(0, -3)
-    : parts[lastIdx]!;
+  parts[lastIdx] = parts[lastIdx]!.endsWith(".py") ? parts[lastIdx]!.slice(0, -3) : parts[lastIdx]!;
   // drop leading dirs up to and including a source root (empty segments from a leading "/").
   while (parts.length && !basename(parts[0]!)) parts.shift();
   // heuristic: start the module at the first "app"-like package segment if present.
@@ -732,7 +736,11 @@ function llm_model_expr(spanWith: Node): string | null {
       (n.args as Node[]).length >= 2
     ) {
       const key = (n.args as Node[])[0]!; // args.length >= 2 checked above
-      if (key.type === "Constant" && typeof key.value === "string" && key.value.toLowerCase().includes("model")) {
+      if (
+        key.type === "Constant" &&
+        typeof key.value === "string" &&
+        key.value.toLowerCase().includes("model")
+      ) {
         return unparse((n.args as Node[])[1]);
       }
     }
@@ -819,7 +827,11 @@ function find_pool_ctor(tree: Node, poolVar: string, smap: SourceMap): [number, 
 
 function pool_already_wrapped(tree: Node, poolVar: string): boolean {
   for (const n of walk(tree)) {
-    if (assigns(n, poolVar) && n.value.type === "Call" && attrChain(n.value.func).includes("propagate")) {
+    if (
+      assigns(n, poolVar) &&
+      n.value.type === "Call" &&
+      attrChain(n.value.func).includes("propagate")
+    ) {
       return true;
     }
   }
@@ -878,15 +890,12 @@ function import_insert_offset(source: string, smap: SourceMap): number {
   const tree = parse(source);
   let afterLine = 1;
   const body = (tree?.body as Node[]) ?? [];
-  if (
-    body.length &&
-    body[0]!.type === "Expr" &&
-    body[0]!.value.type === "Constant"
-  ) {
+  if (body.length && body[0]!.type === "Expr" && body[0]!.value.type === "Constant") {
     afterLine = (body[0]!.end_lineno as number) + 1;
   }
   for (const n of body) {
-    if (n.type === "ImportFrom" && n.module === "__future__") afterLine = (n.end_lineno as number) + 1;
+    if (n.type === "ImportFrom" && n.module === "__future__")
+      afterLine = (n.end_lineno as number) + 1;
   }
   return smap.lineStartOffset(afterLine);
 }
@@ -911,7 +920,11 @@ function pyReprStr(s: string): string {
   const hasSingle = s.includes("'");
   const hasDouble = s.includes('"');
   const quote = hasSingle && !hasDouble ? '"' : "'";
-  let body = s.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t");
+  let body = s
+    .replace(/\\/g, "\\\\")
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t");
   if (quote === "'") body = body.replace(/'/g, "\\'");
   else body = body.replace(/"/g, '\\"');
   return quote + body + quote;
@@ -965,7 +978,10 @@ export function native_otel_body_wrap(
   // locate the function by name (top-level, nested, or method)
   let fn: Node | null = null;
   for (const node of walk(tree)) {
-    if ((node.type === "FunctionDef" || node.type === "AsyncFunctionDef") && node.name === funcName) {
+    if (
+      (node.type === "FunctionDef" || node.type === "AsyncFunctionDef") &&
+      node.name === funcName
+    ) {
       fn = node;
       break;
     }
@@ -1017,7 +1033,12 @@ export function native_otel_body_wrap(
   const setAttr = `${baseIndent}    span.set_attribute("gigaphone.kind", "${kind}")\n`;
 
   const newBodyText = withHeader + setAttr + reindentedBody;
-  const bodyHunk: Hunk = { byteStart: bodyStartByte, byteEnd: bodyEndByte, newText: newBodyText, tag };
+  const bodyHunk: Hunk = {
+    byteStart: bodyStartByte,
+    byteEnd: bodyEndByte,
+    newText: newBodyText,
+    tag,
+  };
 
   const importLine = "from opentelemetry import trace";
   const importByte = import_insert_offset(source, smap);

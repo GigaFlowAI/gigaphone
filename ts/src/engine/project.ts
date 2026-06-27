@@ -1,6 +1,6 @@
 /** Project scanning — locate source files under an (optional) scope, language-neutrally. */
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, normalize, relative } from "node:path";
 import { packForPath } from "../packs/registry.js";
 

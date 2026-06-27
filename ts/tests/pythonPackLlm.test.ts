@@ -53,7 +53,9 @@ function boundaryByFunc(src: string, func: string): Boundary {
 describe("LLM gateway discovery + provider tagging", () => {
   it("tags a hand-rolled gateway hand_rolled", () => {
     const pack = new PythonPack();
-    const d = discoverByCall(pack, "app/gateway.py", HAND_ROLLED).get("app.gateway.LLMGateway.chat");
+    const d = discoverByCall(pack, "app/gateway.py", HAND_ROLLED).get(
+      "app.gateway.LLMGateway.chat",
+    );
     expect(d?.kind).toBe(BoundaryKind.LLM);
     expect(d?.provider).toBe("hand_rolled");
   });

@@ -38,9 +38,7 @@ export interface RenderOpts {
 
 export function render(opts: RenderOpts): string {
   const { harness, language, backend, plan, verifyResults, traceLink = null } = opts;
-  const boundaries = plan.records.filter(
-    (r) => r.kind === "tool_exec" || r.kind === "agent_call",
-  );
+  const boundaries = plan.records.filter((r) => r.kind === "tool_exec" || r.kind === "agent_call");
   const counts: Record<string, number> = {
     [FailureMode.NO_BOUNDARY]: 0,
     [FailureMode.UNTRACED]: 0,
@@ -55,9 +53,7 @@ export function render(opts: RenderOpts): string {
       `${counts[FailureMode.UNTRACED]} untraced · ` +
       `${counts[FailureMode.OFF_CONTEXT]} off-context · ` +
       `${counts[FailureMode.LOSSY_OUTPUT]} lossy` +
-      (counts[FailureMode.NO_BOUNDARY]
-        ? ` · ${counts[FailureMode.NO_BOUNDARY]} no-boundary`
-        : ""),
+      (counts[FailureMode.NO_BOUNDARY] ? ` · ${counts[FailureMode.NO_BOUNDARY]} no-boundary` : ""),
     `Fixed + verified ${verified}/${verifyResults.length} spans (nested + complete).`,
   ];
   for (const v of verifyResults) {
@@ -137,9 +133,7 @@ export function renderReportMd(opts: RenderReportMdOpts): string {
   }
 
   lines.push("", "## Verification", "");
-  lines.push(
-    `- **Single root:** ${tree.singleRoot ? "yes ✓" : "no ✗"} (\`${tree.rootSpanName}\`)`,
-  );
+  lines.push(`- **Single root:** ${tree.singleRoot ? "yes ✓" : "no ✗"} (\`${tree.rootSpanName}\`)`);
   lines.push("");
   lines.push("| Span | Kind | Found | Nested | Complete |");
   lines.push("|---|---|---|---|---|");
@@ -206,9 +200,7 @@ export function renderArchitectureMd(opts: RenderArchitectureMdOpts): string {
   lines.push("|---|---|---|---|");
   for (const d of [...llm, ...tools]) {
     const name = d.emitName || (d.kind === BoundaryKind.LLM ? "llm" : d.id);
-    lines.push(
-      `| ${name} | ${d.kind} | \`${d.matchCall}\` | ${_mechanism(d.kind, d.provider)} |`,
-    );
+    lines.push(`| ${name} | ${d.kind} | \`${d.matchCall}\` | ${_mechanism(d.kind, d.provider)} |`);
   }
 
   lines.push(
@@ -243,8 +235,7 @@ export interface WriteDocsOpts {
 
 /** Write report.md + architecture.md under `docs/gigaphone/` and return their paths. */
 export function writeDocs(repo: string, opts: WriteDocsOpts): string[] {
-  const { harness, language, backend, descriptors, plan, fixResult, tree, traceLink = null } =
-    opts;
+  const { harness, language, backend, descriptors, plan, fixResult, tree, traceLink = null } = opts;
   const outDir = join(repo, "docs", "gigaphone");
   mkdirSync(outDir, { recursive: true });
   const reportPath = join(outDir, "report.md");

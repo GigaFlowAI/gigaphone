@@ -133,7 +133,9 @@ describe("TypeScriptPack", () => {
   });
 
   it("discovery finds gateway and tools", () => {
-    const descs = new Map(new TypeScriptPack().discover(PATH, FIXTURE).map((d) => [d.matchCall, d]));
+    const descs = new Map(
+      new TypeScriptPack().discover(PATH, FIXTURE).map((d) => [d.matchCall, d]),
+    );
     const gw = descs.get("app.agent.LLMGateway.chat");
     expect(gw).toBeDefined();
     expect(gw?.kind).toBe(BoundaryKind.LLM);

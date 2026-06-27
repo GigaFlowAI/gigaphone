@@ -12,7 +12,11 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { BoundaryKind, FailureMode } from "../src/core/boundary.js";
-import { scanFunctions, scanFunctionsLexical, TypeScriptPack } from "../src/packs/typescript/pack.js";
+import {
+  TypeScriptPack,
+  scanFunctions,
+  scanFunctionsLexical,
+} from "../src/packs/typescript/pack.js";
 import * as precise from "../src/packs/typescript/precise.js";
 
 // A class method, a free function, and a *bare* arrow const (no type annotation).

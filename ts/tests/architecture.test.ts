@@ -4,7 +4,7 @@
  * the neutral-core invariant (ADR-0002) can't rot silently.
  */
 
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -65,10 +65,8 @@ describe("architecture: layered dependency flow (ARCHITECTURE.md §2)", () => {
       for (const spec of importsOf(f)) {
         if (!spec.startsWith(".")) continue;
         const norm = spec.replace(/\\/g, "/");
-        const intoAdapterImpl =
-          /\/adapters\/.+\//.test(norm) && !norm.endsWith("/registry.js");
-        const intoPackImpl =
-          /\/packs\/.+\//.test(norm) && !norm.endsWith("/registry.js");
+        const intoAdapterImpl = /\/adapters\/.+\//.test(norm) && !norm.endsWith("/registry.js");
+        const intoPackImpl = /\/packs\/.+\//.test(norm) && !norm.endsWith("/registry.js");
         // allow the backend index/registry and pack registry; forbid deep concrete impls
         if (intoAdapterImpl || intoPackImpl) {
           violations.push(`${relative(SRC, f)} → ${spec}`);

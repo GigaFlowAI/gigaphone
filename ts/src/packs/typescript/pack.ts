@@ -42,10 +42,27 @@ const EXEC_SINKS = [
   "ivm.",
 ];
 // context-hop signatures for TS's concurrency model (DESIGN §7.1, §10).
-const HOP_SIGNATURES = ["new Worker", ".postMessage(", ".submit(", ".run(", "runInWorker(", "pool."];
+const HOP_SIGNATURES = [
+  "new Worker",
+  ".postMessage(",
+  ".submit(",
+  ".run(",
+  "runInWorker(",
+  "pool.",
+];
 const POOL_CTOR_RE = /new\s+[A-Za-z_$][\w$]*?(?:Worker|Pool)[A-Za-z_$]*\s*\(/;
 const TRUNCATION_RE = /([A-Za-z_$][\w$.]*)\s*\.\s*(?:slice|substring|substr)\s*\(\s*0\s*,/;
-const KEYWORDS = new Set(["if", "for", "while", "switch", "catch", "return", "function", "await", "do"]);
+const KEYWORDS = new Set([
+  "if",
+  "for",
+  "while",
+  "switch",
+  "catch",
+  "return",
+  "function",
+  "await",
+  "do",
+]);
 const MODIFIERS = new Set([
   "async",
   "public",
@@ -144,10 +161,11 @@ function bodyAfter(source: string, parenOpen: number): [number, number] | null {
 }
 
 const FREE_FN_RE =
-  /(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*(\()/gd;
-const ARROW_RE = /(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*[:=][^=]*?=\s*(?:async\s*)?(\()/gd;
-const CLASS_RE = /\bclass\s+([A-Za-z_$][\w$]*)/gd;
-const METHOD_RE = /(?:public|private|protected|static|async|get|set|\s)*?([A-Za-z_$][\w$]*)\s*(\()/gd;
+  /(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*(\()/dg;
+const ARROW_RE = /(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*[:=][^=]*?=\s*(?:async\s*)?(\()/dg;
+const CLASS_RE = /\bclass\s+([A-Za-z_$][\w$]*)/dg;
+const METHOD_RE =
+  /(?:public|private|protected|static|async|get|set|\s)*?([A-Za-z_$][\w$]*)\s*(\()/dg;
 
 function groupStart(m: RegExpMatchArray, group: number): number {
   const indices = (m as unknown as { indices?: Array<[number, number] | undefined> }).indices;
@@ -443,10 +461,7 @@ export class TypeScriptPack extends LanguagePack {
       tag: primitive.importLine,
     };
 
-    if (
-      primitive.failureMode === FailureMode.UNTRACED &&
-      boundary.decoratorInsertByte !== null
-    ) {
+    if (primitive.failureMode === FailureMode.UNTRACED && boundary.decoratorInsertByte !== null) {
       // TS has no portable function decorator, so trace by wrapping the body in the curried
       // `gigaphoneTrace(opts)(fn)` higher-order call. Async-correct: the arrow mirrors the
       // boundary's own async-ness.
@@ -503,7 +518,10 @@ export class TypeScriptPack extends LanguagePack {
         .replaceAll("{fields}", pyReprList(fields));
       return {
         path: boundary.path,
-        hunks: [importHunk, { byteStart: at, byteEnd: at, newText: `${indent}${line}  // ${tag}\n`, tag }],
+        hunks: [
+          importHunk,
+          { byteStart: at, byteEnd: at, newText: `${indent}${line}  // ${tag}\n`, tag },
+        ],
         description: `record complete output for \`${boundary.funcName}\` (${primitive.backendId})`,
       };
     }
@@ -535,11 +553,7 @@ function targetsModule(matchCall: string, module: string): boolean {
 }
 
 function alreadyFixed(source: string, funcBody: string, name: string): boolean {
-  const byTag = [
-    `gigaphone:trace:${name}`,
-    `gigaphone:ctx:${name}`,
-    `gigaphone:complete:${name}`,
-  ];
+  const byTag = [`gigaphone:trace:${name}`, `gigaphone:ctx:${name}`, `gigaphone:complete:${name}`];
   const byCall = ["gigaphoneTrace(", "gigaphoneComplete("];
   return byTag.some((t) => source.includes(t)) || byCall.some((c) => funcBody.includes(c));
 }
@@ -550,8 +564,9 @@ function spanName(body: string): string | null {
 }
 
 function spanVar(body: string): string {
-  const m =
-    /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*[^;]*?(?:startSpan|startActiveSpan)/.exec(body);
+  const m = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*[^;]*?(?:startSpan|startActiveSpan)/.exec(
+    body,
+  );
   return m ? (m[1] as string) : "span";
 }
 

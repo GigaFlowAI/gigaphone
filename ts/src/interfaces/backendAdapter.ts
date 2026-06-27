@@ -11,8 +11,8 @@
  * `phoenix` (OTel-native family) under `adapters/backend/`.
  */
 
-import type { Boundary, Expectation, FixPrimitive, VerifyResult } from "../core/model.js";
 import type { FailureMode } from "../core/boundary.js";
+import type { Boundary, Expectation, FixPrimitive, VerifyResult } from "../core/model.js";
 
 export interface VerifyProject {
   repo: string;

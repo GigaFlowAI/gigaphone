@@ -50,20 +50,16 @@ it("plugin ships no mcp server and uses auto-loaded conventions", () => {
   const cc = renderClaudeCode() as Record<string, unknown>;
   const pj = (cc as ReturnType<typeof renderClaudeCode>)["plugin.json"];
   // identity only — skills/, hooks/hooks.json auto-load; declaring them is a duplicate
-  expect(new Set(Object.keys(pj))).toEqual(
-    new Set(["name", "version", "description", "author"]),
-  );
+  expect(new Set(Object.keys(pj))).toEqual(new Set(["name", "version", "description", "author"]));
   expect("mcpServers" in pj).toBe(false);
   // no MCP server is rendered at all (it was removed — the skill drives the CLI)
   expect(".mcp.json" in cc).toBe(false);
   expect("mcp_servers" in renderCodex()["plugin.toml"]).toBe(false);
   expect("mcp_server" in PLUGIN).toBe(false);
   // the post-edit hook launches a bare python3 against the cloned source
-  expect(
-    PLUGIN.hook_command.startsWith(
-      'PYTHONPATH="${CLAUDE_PLUGIN_ROOT}/src" python3 -m',
-    ),
-  ).toBe(true);
+  expect(PLUGIN.hook_command.startsWith('PYTHONPATH="${CLAUDE_PLUGIN_ROOT}/src" python3 -m')).toBe(
+    true,
+  );
 });
 
 it("codex runs command-only hooks", () => {
@@ -84,8 +80,7 @@ it("adapters implement the interface and decline to drive", () => {
 it("committed plugin files match the single source", () => {
   const cc = renderClaudeCode();
 
-  const load = (rel: string) =>
-    JSON.parse(readFileSync(join(_REPO_ROOT, rel), "utf-8"));
+  const load = (rel: string) => JSON.parse(readFileSync(join(_REPO_ROOT, rel), "utf-8"));
 
   expect(load(".claude-plugin/plugin.json")).toEqual(cc["plugin.json"]);
   expect(load(".claude-plugin/marketplace.json")).toEqual(cc["marketplace.json"]);
@@ -93,14 +88,8 @@ it("committed plugin files match the single source", () => {
   // no stray MCP config left in the tree
   expect(existsSync(join(_REPO_ROOT, ".mcp.json"))).toBe(false);
 
-  const bundled = readFileSync(
-    join(_REPO_ROOT, "skills/gigaphone/SKILL.md"),
-    "utf-8",
-  );
-  const canonical = readFileSync(
-    join(_REPO_ROOT, ".agents/skills/gigaphone/SKILL.md"),
-    "utf-8",
-  );
+  const bundled = readFileSync(join(_REPO_ROOT, "skills/gigaphone/SKILL.md"), "utf-8");
+  const canonical = readFileSync(join(_REPO_ROOT, ".agents/skills/gigaphone/SKILL.md"), "utf-8");
   expect(bundled).toBe(canonical); // no drift between Codex + Claude Code skill copies
 });
 

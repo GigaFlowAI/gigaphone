@@ -8,7 +8,7 @@
  * Descriptor (de)serializers, and span/attribute keys stay verbatim wire strings.
  */
 
-import { type BoundaryKind, type FailureMode, type Source } from "./boundary.js";
+import type { BoundaryKind, FailureMode, Source } from "./boundary.js";
 
 /** A byte-accurate source range (and 1-based line for human display). */
 export class Range {

@@ -13,26 +13,26 @@
 
 import { spawnSync } from "node:child_process";
 import {
-  closeSync,
   type Dirent,
+  closeSync,
   mkdtempSync,
   openSync,
-  readdirSync,
   readFileSync,
+  readdirSync,
   rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { LLM_CONVENTION_ATTRS } from "../../../core/boundary.js";
-import { BoundaryKind, type FailureMode, FailureMode as FM } from "../../../core/boundary.js";
+import { BoundaryKind, FailureMode as FM, type FailureMode } from "../../../core/boundary.js";
 import {
   type Boundary,
   type Expectation,
-  expectation,
   type FixPrimitive,
   TreeVerifyResult,
   VerifyResult,
+  expectation,
 } from "../../../core/model.js";
 import { BackendAdapter, type VerifyProject } from "../../../interfaces/backendAdapter.js";
 
@@ -123,7 +123,11 @@ export class OtelAdapter extends BackendAdapter {
 
   // --- detection / config ---------------------------------------------------------
   detectPresence(repo: string): boolean {
-    return scanForAny(repo, [".py"], (t) => t.includes("opentelemetry") || t.includes("openinference"));
+    return scanForAny(
+      repo,
+      [".py"],
+      (t) => t.includes("opentelemetry") || t.includes("openinference"),
+    );
   }
 
   configSchema(): Record<string, string> {
@@ -230,7 +234,11 @@ export class OtelAdapter extends BackendAdapter {
   /** Path 1: the import + init lines that enable a recognized provider's OpenInference instrumentor. */
   enableLlmInstrumentation(provider: string): [string, string] {
     const cls = (
-      { openai: "OpenAIInstrumentor", anthropic: "AnthropicInstrumentor", langchain: "LangChainInstrumentor" } as Record<string, string>
+      {
+        openai: "OpenAIInstrumentor",
+        anthropic: "AnthropicInstrumentor",
+        langchain: "LangChainInstrumentor",
+      } as Record<string, string>
     )[provider];
     if (cls === undefined)
       throw new Error(`no OpenInference instrumentor known for provider ${pyRepr(provider)}`);
@@ -242,7 +250,11 @@ export class OtelAdapter extends BackendAdapter {
     if (boundary.kind === BoundaryKind.LLM) {
       const spanName = boundary.existingSpanName ?? boundary.emitName ?? boundary.funcName;
       const attrs = boundary.requiresLlmConvention ? [...LLM_CONVENTION_ATTRS] : [];
-      return expectation(boundary.funcName, spanName, { requireNested: true, requireAttrs: attrs, kind: "llm" });
+      return expectation(boundary.funcName, spanName, {
+        requireNested: true,
+        requireAttrs: attrs,
+        kind: "llm",
+      });
     }
     const tool = boundary.toolsCovered.length ? boundary.toolsCovered[0]! : boundary.funcName;
     const spanName = boundary.existingSpanName ?? boundary.emitName ?? boundary.funcName;
@@ -285,11 +297,16 @@ export class OtelAdapter extends BackendAdapter {
     const rootName = agent ? agent.name : null;
 
     const results = run.map((exp) =>
-      evaluate(spans.filter((s) => s.name === exp.spanName), exp, agentId, byId),
+      evaluate(
+        spans.filter((s) => s.name === exp.spanName),
+        exp,
+        agentId,
+        byId,
+      ),
     );
 
     const toolCallsText = spans
-      .map((s) => String((s.attributes ?? {})["llm.tool_calls"] ?? ""))
+      .map((s) => String(s.attributes?.["llm.tool_calls"] ?? ""))
       .join(" ");
     const okTools = new Set(results.filter((r) => r.ok && r.kind !== "llm").map((r) => r.tool));
     const linkage = run
@@ -327,7 +344,11 @@ function evaluate(
   return new VerifyResult(exp.tool, true, nested, complete, problems.join(" "), exp.kind);
 }
 
-function isDescendant(span: RawSpan, ancestorId: string | null, byId: Map<string, RawSpan>): boolean {
+function isDescendant(
+  span: RawSpan,
+  ancestorId: string | null,
+  byId: Map<string, RawSpan>,
+): boolean {
   const seen = new Set<string>();
   let cur: RawSpan | undefined = span;
   while (cur !== undefined && !seen.has(cur.span_id)) {

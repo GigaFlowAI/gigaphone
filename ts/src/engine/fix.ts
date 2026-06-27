@@ -19,7 +19,11 @@ export class FixResult {
 }
 
 /** Compute the edits + expectations without writing (for diff preview). */
-export function planFixes(root: string, boundaries: Boundary[], backend: BackendAdapter): FixResult {
+export function planFixes(
+  root: string,
+  boundaries: Boundary[],
+  backend: BackendAdapter,
+): FixResult {
   const result = new FixResult();
   // group edits per file so multiple boundaries in one file compose
   const perFile = new Map<string, CodeEdit[]>();
@@ -183,12 +187,24 @@ function getGroupedOpcodes(codes: Opcode[], n = 3): Opcode[][] {
   if (c.length === 0) c = [["equal", 0, 1, 0, 1]];
   const first = c[0]!;
   if (first[0] === "equal") {
-    c[0] = ["equal", Math.max(first[1], first[2] - n), first[2], Math.max(first[3], first[4] - n), first[4]];
+    c[0] = [
+      "equal",
+      Math.max(first[1], first[2] - n),
+      first[2],
+      Math.max(first[3], first[4] - n),
+      first[4],
+    ];
   }
   const lastIdx = c.length - 1;
   const last = c[lastIdx]!;
   if (last[0] === "equal") {
-    c[lastIdx] = ["equal", last[1], Math.min(last[2], last[1] + n), last[3], Math.min(last[4], last[3] + n)];
+    c[lastIdx] = [
+      "equal",
+      last[1],
+      Math.min(last[2], last[1] + n),
+      last[3],
+      Math.min(last[4], last[3] + n),
+    ];
   }
   const groups: Opcode[][] = [];
   let group: Opcode[] = [];

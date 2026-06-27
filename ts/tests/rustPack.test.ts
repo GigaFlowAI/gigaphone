@@ -8,7 +8,7 @@
  * exercise it structurally and mirror `test_typescript_pack.py`.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { BoundaryKind, FailureMode } from "../src/core/boundary.js";
 import type { Boundary, CodeEdit, FixPrimitive } from "../src/core/model.js";
 import { RustPack } from "../src/packs/rust/pack.js";

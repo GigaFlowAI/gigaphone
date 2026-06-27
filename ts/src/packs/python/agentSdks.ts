@@ -159,13 +159,11 @@ export function formatEntry(
   } = {},
 ): string {
   const parts = [`AgentSdk("${id}", "${framework}"`];
-  if (opts.calls && opts.calls.length) parts.push(`calls=${pyReprTuple(opts.calls)}`);
-  if (opts.constructs && opts.constructs.length)
-    parts.push(`constructs=${pyReprTuple(opts.constructs)}`);
-  if (opts.carriers && opts.carriers.length) parts.push(`carriers=${pyReprTuple(opts.carriers)}`);
-  if (opts.packages && opts.packages.length) parts.push(`packages=${pyReprTuple(opts.packages)}`);
+  if (opts.calls?.length) parts.push(`calls=${pyReprTuple(opts.calls)}`);
+  if (opts.constructs?.length) parts.push(`constructs=${pyReprTuple(opts.constructs)}`);
+  if (opts.carriers?.length) parts.push(`carriers=${pyReprTuple(opts.carriers)}`);
+  if (opts.packages?.length) parts.push(`packages=${pyReprTuple(opts.packages)}`);
   if (opts.inputArg) parts.push(`input_arg=${pyReprStr(opts.inputArg)}`);
-  if (opts.outputFields && opts.outputFields.length)
-    parts.push(`output_fields=${pyReprTuple(opts.outputFields)}`);
+  if (opts.outputFields?.length) parts.push(`output_fields=${pyReprTuple(opts.outputFields)}`);
   return `${parts.join(", ")}),`;
 }

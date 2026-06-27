@@ -601,15 +601,29 @@ def _has_carrier(fn) -> bool:
     return False
 
 
-def _local_helper_bodies(fn, funcs):
-    """fn plus one hop into any locally-defined function fn calls."""
+_HELPER_HOP_LIMIT = 5  # transitive def-use depth bound; guards pathological/deep chains
+
+
+def _local_helper_bodies(fn, funcs, _limit: int = _HELPER_HOP_LIMIT):
+    """fn plus the transitive closure of locally-defined functions it calls, breadth-first up
+    to a small hop limit. Multi-hop so a construct several factory indirections deep
+    (dispatch -> assemble -> build -> Construct()) is still reached. An id-keyed visited set
+    makes mutually-recursive helpers terminate; the limit bounds pathological chains."""
     bodies = [fn]
-    for n in ast.walk(fn):
-        if isinstance(n, ast.Call):
-            tail = _attr_chain(n.func).rsplit(".", 1)[-1]
-            helper = funcs.by_name.get(tail)
-            if helper is not None and helper is not fn:
-                bodies.append(helper)
+    seen = {id(fn)}
+    frontier = [(fn, 0)]
+    while frontier:
+        current, depth = frontier.pop(0)
+        if depth >= _limit:
+            continue
+        for n in ast.walk(current):
+            if isinstance(n, ast.Call):
+                tail = _attr_chain(n.func).rsplit(".", 1)[-1]
+                helper = funcs.by_name.get(tail)
+                if helper is not None and id(helper) not in seen:
+                    seen.add(id(helper))
+                    bodies.append(helper)
+                    frontier.append((helper, depth + 1))
     return bodies
 
 
@@ -638,8 +652,9 @@ def _annotation_symbols(ann) -> list:
 
 
 def _match_construct_carrier(fn, imports: dict, funcs):
-    """fn carries an outbound call AND constructs a catalogued symbol (here or one hop),
-    with the construct's origin resolving to that SDK's package."""
+    """fn carries an outbound call AND constructs a catalogued symbol (here or transitively
+    through the local helpers it calls), with the construct's origin resolving to that SDK's
+    package."""
     if not _has_carrier(fn):
         return None
     for body in _local_helper_bodies(fn, funcs):
@@ -652,7 +667,7 @@ def _match_construct_carrier(fn, imports: dict, funcs):
                 sdk = agent_sdks.match_construct(symbol, pkg)
                 if sdk is not None:
                     return sdk
-        # (b) return-type annotation of a one-hop helper — survives factory indirection
+        # (b) return-type annotation of a helper in the chain — survives factory indirection
         for symbol in _annotation_symbols(getattr(body, "returns", None)):
             sdk = agent_sdks.match_construct(symbol, _root_pkg(imports.get(symbol)))
             if sdk is not None:

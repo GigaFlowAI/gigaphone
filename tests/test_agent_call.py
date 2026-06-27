@@ -285,3 +285,45 @@ def test_return_annotation_requires_carrier(tmp_path):
         "    return _build(x)\n",  # no .post anywhere
     )
     assert not any(d.kind.value == "agent_call" for d in descs)
+
+
+def test_construct_two_hops_deep_from_carrier_resolves(tmp_path):
+    # The carrier (.post) sits in the dispatcher; the Agent construct is TWO helper hops away
+    # (dispatch -> _assemble -> _build). One-hop def-use misses it; transitive (multi-hop)
+    # helper chaining must follow the call chain to the construct.
+    descs = _discover_src(
+        tmp_path,
+        "svc.py",
+        "from __future__ import annotations\n"
+        "from openhands.sdk import Agent\n"
+        "import httpx\n\n"
+        "def _build(task):\n"
+        "    return Agent(model='x')\n\n"
+        "def _assemble(task):\n"
+        "    return _build(task)\n\n"
+        "async def dispatch(task, client):\n"
+        "    req = _assemble(task)\n"
+        "    return await client.post('http://a/api/conversations', json={'a': req})\n",
+    )
+    agent = next((d for d in descs if d.kind.value == "agent_call"), None)
+    assert agent is not None and agent.match_call == "svc.dispatch"
+    assert agent.emit_name == "svc.subagent.openhands-sdk"
+
+
+def test_recursive_helper_chain_terminates_and_does_not_match(tmp_path):
+    # Mutually-recursive helpers with no catalogued construct must not hang the multi-hop
+    # walk (cycle guard) and must not produce a spurious agent_call.
+    descs = _discover_src(
+        tmp_path,
+        "r.py",
+        "from __future__ import annotations\n"
+        "import httpx\n\n"
+        "def _a(x):\n"
+        "    return _b(x)\n\n"
+        "def _b(x):\n"
+        "    return _a(x)\n\n"
+        "def dispatch(x, client):\n"
+        "    y = _a(x)\n"
+        "    return client.post('http://a/x', json={'y': y})\n",
+    )
+    assert not any(d.kind.value == "agent_call" for d in descs)

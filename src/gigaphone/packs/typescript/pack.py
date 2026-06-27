@@ -1,15 +1,16 @@
-"""TypeScript language pack — v1 **lexical** implementation.
+"""TypeScript language pack.
 
-This pack is a pragmatic regex/brace-scanning parser, not a full CST. It is deliberately
-parserless: tree-sitter-typescript wheels are heavy and fragile to build in headless CI,
-so v1 ships a lexical pack that covers the anchor catalog (gateway, tool registry,
-execution sinks) and the failure-mode signatures for TS's concurrency model
-(AsyncLocalStorage / worker_threads / off-ALS promises). Per ADR-0007 a pack may choose
-its own parser; tree-sitter is the planned upgrade for full byte-precise localization.
+Function scanning has two interchangeable backends behind ``_scan_functions`` (ADR-0007):
+a **tree-sitter** CST scanner (``_treesitter``) when ``tree-sitter`` +
+``tree-sitter-typescript`` are installed — byte-precise and robust to generics/template
+braces/no-paren arrows — falling back to a **lexical** regex/brace scanner when they are
+not, so the engine stays pure-stdlib and CI runs headless. Both produce the same ``_Func``
+records, so discovery, analysis, and codemod emission are parser-agnostic.
 
 It mirrors ``PythonPack``: ``discover`` proposes descriptors, ``analyze`` classifies
-failure modes, ``emit_fix`` renders idempotent, byte-accurate codemods. Limits (lexical):
-simple parameter lists, no string/template braces inside headers, block-bodied functions.
+failure modes, ``emit_fix`` renders idempotent, byte-accurate codemods. The lexical
+fallback covers the common shapes (simple parameter lists, block-bodied functions); the
+tree-sitter backend removes those limits where its wheels are available.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from dataclasses import dataclass
 from gigaphone.core.boundary import BoundaryKind, FailureMode, Source
 from gigaphone.core.model import Boundary, CodeEdit, Descriptor, FixPrimitive, Hunk, Range
 from gigaphone.interfaces.language_pack import LanguagePack
+from gigaphone.packs.typescript import _treesitter
 
 # --- built-in anchor catalog (DESIGN §7.1), TypeScript flavour -----------------------
 _GATEWAY_CLASS_HINTS = ("llm", "gateway", "client", "model")
@@ -152,6 +154,21 @@ _METHOD_RE = re.compile(
 
 
 def _scan_functions(source: str) -> list[_Func]:
+    """Scan top-level functions, class methods, and arrow-const functions.
+
+    Prefers the tree-sitter backend (byte-precise CST) when its wheels are installed,
+    falling back to the lexical scanner otherwise (ADR-0007). The tree-sitter path is
+    wrapped so any parse failure degrades to the lexical scanner rather than breaking the
+    pack."""
+    if _treesitter.available():
+        try:
+            return [_Func(**rec) for rec in _treesitter.scan(source)]
+        except Exception:  # noqa: BLE001 - never let a parse hiccup break the pack
+            pass
+    return _scan_functions_lexical(source)
+
+
+def _scan_functions_lexical(source: str) -> list[_Func]:
     funcs: list[_Func] = []
     seen: set[int] = set()
 

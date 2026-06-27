@@ -14,11 +14,20 @@ authors = [{ name = "Gigaflow" }]
 dependencies = []
 
 [project.optional-dependencies]
+# Optional, never a runtime dep: the TypeScript pack prefers a tree-sitter CST when these
+# are installed and falls back to its lexical scanner otherwise (ADR-0007), so the engine
+# stays pure-stdlib and the bare-`python3` plugin is unaffected.
+treesitter = [
+    "tree-sitter>=0.22",
+    "tree-sitter-typescript>=0.23",
+]
 dev = [
     "ruff>=0.6",
     "pytest>=8",
     "opentelemetry-sdk>=1.20",  # the testclient + e2e verify exercise a real OTel app
     "pyyaml>=6",                # cross-check the vendored _yaml against PyYAML in tests
+    "tree-sitter>=0.22",        # exercise the tree-sitter TS scanner in CI (ADR-0007)
+    "tree-sitter-typescript>=0.23",
 ]
 
 [project.scripts]

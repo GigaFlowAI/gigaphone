@@ -1,0 +1,41 @@
+{
+  "name": "gigaphone",
+  "version": "0.5.0",
+  "description": "Trace-coverage instrumentation for AI agent codebases — neutral across harness, language, vendor, and codebase.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "gigaphone": "./dist/cli.js"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./interfaces": "./dist/interfaces/index.js",
+    "./runtime/otel": "./dist/runtime/otel.js",
+    "./runtime/braintrust": "./dist/runtime/braintrust.js",
+    "./runtime/langsmith": "./dist/runtime/langsmith.js",
+    "./runtime/logfire": "./dist/runtime/logfire.js",
+    "./runtime/phoenix": "./dist/runtime/phoenix.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check src tests",
+    "lint:fix": "biome check --write src tests",
+    "gigaphone": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "yaml": "^2.5.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

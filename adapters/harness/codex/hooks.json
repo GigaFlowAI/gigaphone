@@ -2,7 +2,7 @@
   "hooks": [
     {
       "on": "post-edit",
-      "run": "PYTHONPATH=\"${CLAUDE_PLUGIN_ROOT}/src\" python3 -m gigaphone.cli detect --repo \"${CLAUDE_PROJECT_DIR}\" || true"
+      "run": "node \"${CLAUDE_PLUGIN_ROOT}/dist/cli.js\" detect --repo \"${CLAUDE_PROJECT_DIR}\" || true"
     }
   ]
 }

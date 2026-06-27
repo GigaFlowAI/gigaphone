@@ -24,10 +24,12 @@ claude plugin marketplace add GigaFlow-AI-Incorporated/gigaphone
 claude plugin install gigaphone@gigaphone
 ```
 
-**No dependencies.** The engine is pure standard-library Python, so the plugin runs on a
-bare `python3` (3.9+, e.g. your system interpreter) — there is **no pip / uv / venv step**.
-Installing wires up a guided skill (which runs the engine via its CLI on demand) and a
-post-edit hook that keeps coverage from regressing.
+The engine is TypeScript and runs on **Node ≥20**; the plugin ships the built CLI
+(`dist/cli.js`), so there is no per-repo build step. Installing wires up a guided skill (which
+runs the engine via its CLI on demand) and a post-edit hook (`node dist/cli.js detect …`) that
+keeps coverage from regressing. To *verify* a target codebase the engine launches that target's
+runtime — `python3` for a Python repo, `node` for a TypeScript one — so the matching interpreter
+needs to be on PATH (see [How it works](#how-it-works)).
 
 *(Codex: point it at the repo — the skill lives at `.agents/skills/gigaphone/`.)*
 
@@ -49,16 +51,18 @@ post-edit hook that keeps coverage from regressing.
    Nothing changes without your approval, and nothing is called "fixed" until verify passes.
    The result is committed as `gigaphone.boundaries.yaml` so future and CI runs stay deterministic.
 
-3. **Kick the tires first** (zero deps, bare `python3`) on the bundled example app:
+3. **Kick the tires first** on a bundled example app:
    ```bash
    git clone https://github.com/GigaFlow-AI-Incorporated/gigaphone && cd gigaphone
+   npm install
    TMP=$(mktemp -d); cp -r testclient/app "$TMP/app"
-   PYTHONPATH=src python3 -m gigaphone.cli discover --repo "$TMP" --scope app
-   PYTHONPATH=src python3 -m gigaphone.cli fix --repo "$TMP" --scope app --apply   # prints the diffs
+   npx tsx src/cli.ts discover --repo "$TMP" --scope app
+   npx tsx src/cli.ts fix --repo "$TMP" --scope app --apply   # prints the diffs
    ```
-   `verify` then runs your representative path to confirm coverage. (The bundled demo app
-   itself uses OpenTelemetry; install it — `pip install opentelemetry-sdk` — to run the full
-   `onboard` end-to-end on the example.)
+   `verify` then runs your representative path (launching the target's runtime) to confirm
+   coverage. `testclient/` is the Python demo and `testclient-ts/` the TypeScript one; both
+   capstones (red→green→idempotent) run end-to-end via `onboard`. (The Python demo uses
+   OpenTelemetry; install it — `pip install opentelemetry-sdk` — to run the full flow.)
 
 ## How it works
 
@@ -85,8 +89,9 @@ your trace. See [ADR-0003](docs/adr/0003-trace-the-consumption-boundary.md).
    │               precisely           diffs                                │
    │                                                                        │
    │   parameterized inward by:                                             │
-   │     • Language pack    python · typescript · rust (parsing + codemods) │
-   │     • Boundary config  gigaphone.boundaries.yaml  (discovered per repo)│
+   │     • Language pack     python · typescript · rust (parsing + codemods)│
+   │     • Codebase axis    gigaphone.boundaries.yaml (discovered config)   │
+   │                        OR a CodebaseAdapter (code) for a known codebase│
    └───────────────────────────────┬───────────────────────────────────────┘
                                     ▼ emit + verify
   Backend adapter ▶ OTel · Braintrust · LangSmith · Logfire · Phoenix · any OTLP
@@ -99,15 +104,19 @@ freely (e.g. Codex × TypeScript × LangSmith × your gateway):
 
 | Axis | What varies | How it plugs in |
 |------|-------------|-----------------|
-| **Harness** | how GigaPhone is driven & packaged (Claude Code, Codex; later Cursor, Gemini…) | harness adapter (`src/gigaphone/adapters/harness/`) |
-| **Language** | the codebase's language (Python, TypeScript, Rust) | language pack (`src/gigaphone/packs/`) |
-| **Vendor** | where spans are emitted & verified (Braintrust, LangSmith, Arize, Logfire, any OTLP) | backend adapter (`src/gigaphone/adapters/backend/`) |
-| **Codebase** | the shape of *your* code, especially the LLM gateway | discovered **config**, not code (`gigaphone.boundaries.yaml`) |
+| **Harness** | how GigaPhone is driven & packaged (Claude Code, Codex; later Cursor, Gemini…) | harness adapter (`src/adapters/harness/`) |
+| **Language** | the codebase's language (Python, TypeScript, Rust) | language pack (`src/packs/`) |
+| **Vendor** | where spans are emitted & verified (OTel, Braintrust, LangSmith, Logfire, Phoenix, any OTLP) | backend adapter (`src/adapters/backend/`) |
+| **Codebase** | the shape of *your* code, especially the LLM gateway | discovered **config** (`gigaphone.boundaries.yaml`) **or**, for a *known* codebase, a `CodebaseAdapter` (`src/adapters/codebase/`) |
 
-The first three are pluggable **code** interfaces; the fourth is externalized **data** that
-discovery learns once and commits. Discovery (the only place a model reasons) produces that
-config; every routine run after that is deterministic — which is why GigaPhone can safely
-edit production code and run head-less in CI.
+Harness, language, and vendor are pluggable **code** interfaces. The codebase axis is two-tier
+(ADR-0010): an **unknown** codebase is externalized **data** that discovery learns once and
+commits; a **known** codebase or framework may additionally ship a deterministic
+`CodebaseAdapter` — code that recognizes bespoke dispatch the generic matcher misses and
+declares its intentional-redaction model. Either way the result is materialized into committed
+config. Discovery (the only place a model reasons) produces that config; every routine run after
+that is deterministic — which is why GigaPhone can safely edit production code and run head-less
+in CI.
 
 ## Contributing
 
@@ -116,17 +125,25 @@ rather than a change to the core. Pick your axis:
 
 | Want to support… | Add a… | Where |
 |------------------|--------|-------|
-| a new language | **language pack** (parse + def-use + codemod emitters) | `src/gigaphone/packs/<lang>/`, register in `packs/registry.py` |
-| a new observability vendor | **backend adapter** (emit + verify) | `src/gigaphone/adapters/backend/<vendor>/`, register in `adapters/registry.py` |
-| a new agent harness | **harness adapter** (manifest + hooks) | `src/gigaphone/adapters/harness/`, then regenerate plugins |
+| a new language | **language pack** (parse + def-use + codemod emitters) | `src/packs/<lang>/`, register in `src/packs/registry.ts` |
+| a new observability vendor | **backend adapter** (emit + verify) | `src/adapters/backend/<vendor>/`, register in `src/adapters/backend/registry.ts` |
+| a new agent harness | **harness adapter** (manifest + hooks) | `src/adapters/harness/`, then regenerate plugins |
+| a *known* codebase / framework | **codebase adapter** (bespoke recognition + redaction model) | `gigaphone codebase init <name>` scaffolds `gigaphone.codebase.ts`; bundle OSS ones in `src/adapters/codebase/` |
 | your own gateway shape | **nothing** — it's discovered config, not code | `gigaphone.boundaries.yaml` |
 
-Dev loop (the engine itself is dependency-free; the dev/test tooling is not):
+The runtime shims that instrumented customer code imports stay in the **target** language
+(`gigaphone.runtime.*` for Python, `@gigaphone/*` for TypeScript) and ship as **assets** under
+`assets/runtime/{python,typescript}/` — they are not part of the TS engine. `verify` launches the
+target's runtime with the shim on its path and reads the emitted spans back language-neutrally
+(see [`ARCHITECTURE.md`](ARCHITECTURE.md) §4).
+
+Dev loop (Node ≥20):
 
 ```bash
-uv run --extra dev pytest          # full suite — must pass on Python 3.9 and 3.14
-uv run --extra dev ruff check .    # lint
-uv run --extra dev ruff format .   # format
+npm install              # install deps
+npm test                 # full vitest suite — must pass
+npm run typecheck        # tsc --noEmit (strict — 0 errors)
+npx biome check src tests  # lint
 ```
 
 Guidelines:
@@ -137,7 +154,7 @@ Guidelines:
 - **No fix without a red fixture, no coverage without verification.** Every fixable failure
   mode ships with a breaking test that proves the fix; a tool is only "covered" once a backend
   `verify()` confirms the span is nested and complete.
-- **Plugin manifests come from one source.** Edit `src/gigaphone/adapters/harness/manifest.py`,
-  then run `python scripts/build_plugins.py` (a test guards that committed files match).
+- **Plugin manifests come from one source.** Edit `src/adapters/harness/manifest.ts`,
+  then run `npx tsx scripts/build-plugins.ts` (a test guards that committed files match).
 - `AGENTS.md` is the contributor/agent quick-reference (commands, routing, prohibitions). The
   full design rationale is in [`docs/DESIGN.md`](docs/DESIGN.md).

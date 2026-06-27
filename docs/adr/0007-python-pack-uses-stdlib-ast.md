@@ -30,9 +30,12 @@ ships with the runtime (e.g. the TypeScript pack).
   to the core.
 - Per-pack parser choice is allowed; the def-use and `off_context` *contracts* (DESIGN §16)
   remain part of the pack spec so coverage stays consistent across packs regardless of parser.
-- The TypeScript pack now realises this: it prefers a tree-sitter CST scanner when
-  `tree-sitter` + `tree-sitter-typescript` are installed (the `treesitter` optional extra)
-  and falls back to its lexical scanner when they are not — so the engine stays pure-stdlib
-  and the bare-`python3` plugin / headless CI are unaffected, while installs that opt into
-  the extra get byte-precise parsing (generics, template braces, bare arrow consts). Both
-  backends emit the same `_Func` records, so the neutrality contract above is preserved.
+- The TypeScript pack realises this with a precise scanner backed by the **TypeScript
+  compiler API** (`src/packs/typescript/precise.ts`), used when `typescript` is importable and
+  falling back to a lexical scanner otherwise. (After the TS rewrite the engine itself is Node,
+  so reusing the codebase's own compiler is more natural than a tree-sitter grammar; an earlier
+  Python-engine iteration used tree-sitter-typescript here.) Both backends emit the same `Func`
+  records, so the neutrality contract above is preserved.
+- The **Python** pack, now that the engine is TypeScript, reaches CPython's `ast` through a
+  bundled `python3` bridge (`astDump.py`) — the same stdlib parser, exact source locations
+  intact, no JS reimplementation of Python parsing.

@@ -1,25 +1,28 @@
 {
   "project": "gigaphone",
-  "design_version": "0.4",
+  "design_version": "0.5",
   "package_version": "0.5.0",
   "updated": "2026-06-27",
-  "current_milestone": "v1 working end-to-end",
+  "current_milestone": "TypeScript engine + CodebaseAdapter axis",
+  "language": "typescript (Node ESM; strict tsc, vitest, biome). Rewritten from the Python engine — all functionality preserved and verified by the ported suite.",
   "milestones": {
     "M0": { "title": "Scaffold", "status": "done" },
-    "M1": { "title": "Neutral core spine (model, classifier, plan records, config)", "status": "done" },
-    "M2": { "title": "Python language pack (stdlib ast; 4 fixes)", "status": "done" },
+    "M1": { "title": "Neutral core spine (model, boundary vocab, plan records, config)", "status": "done" },
+    "M2": { "title": "Python language pack (python3 ast-dump bridge; 4 fixes)", "status": "done" },
     "M3": { "title": "Generic OTel backend adapter + real span verify", "status": "done" },
     "M4": { "title": "Discovery -> committed config + resolution protocol + drift", "status": "done" },
-    "M5": { "title": "Harness adapters (Claude Code + Codex; skill-driven CLI, no MCP server)", "status": "done" },
-    "M6": { "title": "TypeScript pack + native backends (Braintrust/LangSmith) + CI mode", "status": "done" }
+    "M5": { "title": "Harness adapters (Claude Code + Codex; Node CLI hook, no MCP server)", "status": "done" },
+    "M6": { "title": "TypeScript pack (lexical + TS-compiler precise) + native backends + CI", "status": "done" },
+    "M7": { "title": "Full TypeScript rewrite (engine→TS; runtime shims stay target-lang assets)", "status": "done" },
+    "M8": { "title": "CodebaseAdapter axis (4th axis as code: scaffold + registry + example + CLI)", "status": "done" }
   },
-  "e2e_verified": "Python x OTel x testclient: discover -> classify -> (red) verify -> fix -> (green) verify -> idempotent. 30 tests green; the gigaphone CLI onboard prints a 3/3 nested+complete report.",
+  "e2e_verified": "Both language paths green end-to-end via vitest: TS onboarding (live Node) and Python onboarding (python3 testclient) each prove discover -> classify -> (red) verify -> fix -> (green) verify -> idempotent + coherent trace tree. 102 tests across 14 files; tsc 0 errors; biome clean.",
   "axes": {
     "harness": ["claude-code", "codex"],
-    "language": ["python (full)", "typescript (lexical v1)"],
+    "language": ["python (python3 ast bridge)", "typescript (lexical + TS-compiler precise)", "rust (lexical)"],
     "vendor": ["otel (full + e2e verify)", "braintrust (native, contextvars family)", "langsmith (native, contextvars family)", "logfire (native, OTel family)", "phoenix/arize (native, OTel family)"],
-    "codebase": "discovered config (gigaphone.boundaries.yaml)"
+    "codebase": "discovered config (gigaphone.boundaries.yaml) OR a CodebaseAdapter (code) for a known codebase (ADR-0010)"
   },
-  "next_task": "v2: tree-sitter-backed TS parsing; package the harness plugins to the marketplaces. (Done: Logfire + Arize/Phoenix backends — OTel family; TS testclient e2e — red->green->idempotent on a real Node run; richer interprocedural def-use — transitive multi-hop helper chaining with an id-keyed cycle guard + depth bound.)",
-  "notes": "Structured cross-session state (JSON so agents don't inappropriately edit it). The four fixes (trace_boundary/restore_context/map_output, plus advisory no_boundary) are real and tested. TS pack is parserless (lexical) in v1 per ADR-0007; not yet exercised by an e2e."
+  "next_task": "v2: more bundled CodebaseAdapters (beyond the OpenHands example); richer interprocedural def-use across files; publish the engine package + plugin to the marketplaces.",
+  "notes": "Structured cross-session state. The engine is now TypeScript (Node); the Python implementation was deleted on the TS-rewrite branch. Language-specific RUNTIME SHIMS (gigaphone.runtime.* for Python targets, @gigaphone/* for TS targets) are imported by the instrumented customer code, so they remain in the target language and ship as assets under assets/runtime/<lang>/ (ADR + ARCHITECTURE.md §4). verify launches python3/node for the respective target. ARCHITECTURE.md §2 layering is enforced by tests/architecture.test.ts."
 }

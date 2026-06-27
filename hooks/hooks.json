@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "PYTHONPATH=\"${CLAUDE_PLUGIN_ROOT}/src\" python3 -m gigaphone.cli detect --repo \"${CLAUDE_PROJECT_DIR}\" || true"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/cli.js\" detect --repo \"${CLAUDE_PROJECT_DIR}\" || true"
           }
         ]
       }

@@ -5,37 +5,50 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-      - name: Set up Node (>=23.6 for the TypeScript e2e's .ts type-stripping)
+      - name: Set up Node (>=23.6 for the TS e2e's .ts type-stripping)
         uses: actions/setup-node@v4
         with:
           node-version: "24"
-      - name: Lint
-        run: uv run --extra dev ruff check src tests
-      - name: Format check
-        run: uv run --extra dev ruff format --check src tests
+      - name: Set up Python (the python language pack shells to python3; the python e2e needs opentelemetry)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install opentelemetry-sdk
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc -p tsconfig.json --noEmit
+      - name: Lint + format
+        run: npx biome check src tests
       - name: Plugin freshness (committed manifests match the single source)
-        run: uv run python scripts/build_plugins.py --check
-      - name: Tests
-        run: uv run --extra dev pytest -q
+        run: npx tsx scripts/build-plugins.ts --check
+      - name: Tests (unit + Python/TS e2e)
+        run: npx vitest run
 
   coverage-regression:
-    # Head-less CI mode (DESIGN §13): off the committed config, fail if anyone adds an
-    # untraced/lossy/off-context tool boundary that the fixes haven't covered.
+    # Head-less CI mode (DESIGN §13): off the committed config, onboard the bundled testclient
+    # and fail if anyone added an untraced/lossy/off-context boundary the fixes don't cover.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install opentelemetry-sdk
+      - run: npm ci
       - name: Onboard the bundled testclient and verify coverage
         run: |
           set -e
           TMP=$(mktemp -d)
           cp -r testclient/app "$TMP/app"
-          uv run --extra dev gigaphone onboard --repo "$TMP" --scope app --module app.run_representative
+          npx tsx src/cli.ts onboard --repo "$TMP" --scope app --module app.run_representative

@@ -8,12 +8,9 @@
  * runtime shim the fixes import (`gigaphone.runtime.logfire`).
  */
 
-import { OtelAdapter, scanForAny } from "./otel/adapter.js";
+import { OtelAdapter, pyRepr, scanForAny } from "./otel/adapter.js";
 
 /** Python repr() of a string: single-quoted with backslash/quote escaping. */
-function pyRepr(s: string): string {
-  return `'${s.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
-}
 
 export class LogfireAdapter extends OtelAdapter {
   override readonly id = "logfire";

@@ -317,11 +317,6 @@ export class OtelAdapter extends BackendAdapter {
       }));
     return new TreeVerifyResult(singleRoot, rootName, results, linkage);
   }
-
-  // interface fix-primitive stubs (delegate to primitiveFor in practice) ---
-  detectFramework(): null {
-    return null;
-  }
 }
 
 function evaluate(
@@ -444,4 +439,4 @@ function scanForAny(root: string, exts: string[], pred: (text: string) => boolea
   return false;
 }
 
-export { runAndCapture, scanForAny };
+export { pyRepr, runAndCapture, scanForAny };

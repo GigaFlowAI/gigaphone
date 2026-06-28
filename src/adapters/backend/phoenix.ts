@@ -9,12 +9,9 @@
  * shim (`gigaphone.runtime.phoenix`).
  */
 
-import { OtelAdapter, scanForAny } from "./otel/adapter.js";
+import { OtelAdapter, pyRepr, scanForAny } from "./otel/adapter.js";
 
 /** Python repr() of a string: single-quoted with backslash/quote escaping. */
-function pyRepr(s: string): string {
-  return `'${s.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
-}
 
 export class PhoenixAdapter extends OtelAdapter {
   override readonly id = "phoenix";

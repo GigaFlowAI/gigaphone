@@ -248,7 +248,7 @@ export class PythonPack extends LanguagePack {
       const funcName = tail(d.matchCall);
       const fn = funcs.get(funcName);
       if (fn === undefined) continue;
-      const b = this.analyzeFn(d, fn, module, path, source, smap, funcs, tree);
+      const b = this.analyzeFn(d, fn, module, path, smap, funcs, tree);
       if (b !== null) boundaries.push(b);
     }
     return boundaries;
@@ -259,7 +259,6 @@ export class PythonPack extends LanguagePack {
     fn: Node,
     module: string,
     path: string,
-    source: string,
     smap: SourceMap,
     funcs: Map<string, Node>,
     tree: Node,

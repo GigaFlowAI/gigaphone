@@ -231,6 +231,25 @@ export class PythonPack extends LanguagePack {
         );
       }
     }
+
+    // 5) lifecycle hook-bus tool boundary (generic). A harness that fires a named
+    //    `*tool_call*` observer hook with the tool result is reporting a tool-execution
+    //    boundary. Dotted-call matching misses these because dispatch goes through a registry /
+    //    middleware; the *hook* is the language-neutral signal that "a tool ran here". The
+    //    boundary is the function that produces the result — firing the hook directly, or
+    //    delegating to an emitter helper it calls (the emitter itself is not the boundary).
+    for (const [name, fn] of funcs) {
+      if (!is_hook_tool_boundary(fn) || is_tool_hook_emitter_name(name)) continue;
+      if (out.some((d) => d.matchCall.endsWith(`.${name}`))) continue;
+      out.push(
+        new Descriptor({
+          id: `tool-${name}`,
+          kind: BoundaryKind.TOOL_EXEC,
+          matchCall: `${module}.${name}`,
+          emitName: `${proj(module)}.${name}`,
+        }),
+      );
+    }
     return dedupe(out);
   }
 
@@ -577,6 +596,52 @@ function wraps_exec_sink(fn: Node): boolean {
       const dotted = attrChain(n.func);
       if (EXEC_CALL_EXACT.has(dotted) || endsWithAny(dotted, EXEC_CALL_PREFIXES)) return true;
     }
+  }
+  return false;
+}
+
+// --- lifecycle hook-bus recognition (generic across observer-hook harnesses) -----------
+// A tool-lifecycle event string fired through a hook bus, e.g. invoke_hook("post_tool_call", …).
+const TOOL_HOOK_EVENT = /(?:^|[._])(?:pre|post|on)_?tool_?call|(?:^|[._])tool_call(?:s)?(?:$|[._])/i;
+// Callee names that *report* to a hook bus (the dispatch verb), vs the boundary that does work.
+const HOOK_DISPATCH = /(?:^|_)(?:invoke|emit|run|fire|publish|trigger|notify|dispatch)_?hook/i;
+// Emitter helpers: thin wrappers whose job is firing the *tool-call* hook (name-based), e.g.
+// `_emit_post_tool_call_hook`, `_emit_terminal_post_tool_call`. Keyed on the `tool_call`
+// lifecycle event specifically — NOT any "tool"-ish name (`_fire_tool_gen_started` is a
+// generation-progress signal, not the consumption boundary). They are not the boundary.
+const TOOL_HOOK_EMITTER = /(?:emit|notify|fire|publish|dispatch|invoke|_emit)_?.*tool_?call|tool_?call.*hook/i;
+
+function is_tool_hook_emitter_name(name: string): boolean {
+  return TOOL_HOOK_EMITTER.test(name);
+}
+
+/** First string-literal positional arg of a call, if any (the hook event name). */
+function firstStringArg(call: Node): string | null {
+  const args = call.args as Node[];
+  if (args.length && args[0]!.type === "Constant" && typeof args[0]!.value === "string") {
+    return args[0]!.value as string;
+  }
+  return null;
+}
+
+/**
+ * Does `fn` produce a tool result reported through the hook bus? True when it either
+ *  (a) fires a tool-lifecycle hook directly — `invoke_hook("post_tool_call", …)`, or
+ *  (b) calls an emitter helper named like a tool-hook emitter (`_emit_post_tool_call_hook(…)`).
+ * Case (b) makes it robust to the common indirection where a helper fires the hook and the
+ * boundary that ran the tool merely calls that helper.
+ */
+function is_hook_tool_boundary(fn: Node): boolean {
+  for (const n of walk(fn)) {
+    if (n.type !== "Call") continue;
+    const callee = tail(attrChain(n.func));
+    // (a) direct hook fire with a tool-lifecycle event
+    if (HOOK_DISPATCH.test(callee)) {
+      const ev = firstStringArg(n);
+      if (ev !== null && TOOL_HOOK_EVENT.test(ev)) return true;
+    }
+    // (b) delegates to a tool-hook emitter helper
+    if (TOOL_HOOK_EMITTER.test(callee)) return true;
   }
   return false;
 }

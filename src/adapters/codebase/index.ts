@@ -1,3 +1,4 @@
+export { HermesAdapter } from "./examples/hermes.js";
 export { OpenHandsAdapter } from "./examples/openhands.js";
 export {
   adapterById,

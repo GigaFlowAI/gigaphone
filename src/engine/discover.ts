@@ -24,19 +24,29 @@ export function discover(
 ): Descriptor[] {
   const found = new Map<string, Descriptor>();
   const files = scan(root, scope);
+
+  // A known harness can fully model its own boundaries; when any active adapter declares
+  // itself authoritative, it *owns* discovery — only the authoritative adapters run, and the
+  // generic packs (plus any non-authoritative adapters) are skipped so their name-matched
+  // noise never reaches the config. See CodebaseAdapter.authoritative (ADR-0010).
+  const authoritative = codebaseAdapters.filter((a) => a.authoritative(root));
+  const adapters = authoritative.length ? authoritative : codebaseAdapters;
+
   // codebase adapters first — authored knowledge takes precedence over generic heuristics
-  for (const adapter of codebaseAdapters) {
+  for (const adapter of adapters) {
     for (const sf of files) {
       for (const d of adapter.discover(sf.relPath, read(sf))) {
         if (!found.has(d.matchCall)) found.set(d.matchCall, d);
       }
     }
   }
-  for (const sf of files) {
-    const pack = packForPath(sf.absPath);
-    if (pack === null) continue;
-    for (const d of pack.discover(sf.relPath, read(sf))) {
-      if (!found.has(d.matchCall)) found.set(d.matchCall, d);
+  if (authoritative.length === 0) {
+    for (const sf of files) {
+      const pack = packForPath(sf.absPath);
+      if (pack === null) continue;
+      for (const d of pack.discover(sf.relPath, read(sf))) {
+        if (!found.has(d.matchCall)) found.set(d.matchCall, d);
+      }
     }
   }
   // stable order: gateways first, then tools, by id

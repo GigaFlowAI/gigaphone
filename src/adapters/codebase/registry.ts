@@ -12,9 +12,10 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { CodebaseAdapter } from "../../interfaces/codebaseAdapter.js";
+import { HermesAdapter } from "./examples/hermes.js";
 import { OpenHandsAdapter } from "./examples/openhands.js";
 
-const BUNDLED: CodebaseAdapter[] = [new OpenHandsAdapter()];
+const BUNDLED: CodebaseAdapter[] = [new OpenHandsAdapter(), new HermesAdapter()];
 
 /** Convention filenames for a repo-local proprietary adapter (compiled, default-exported). */
 const REPO_LOCAL = ["gigaphone.codebase.mjs", "gigaphone.codebase.js"];

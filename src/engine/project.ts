@@ -12,6 +12,9 @@ const SKIP_DIRS = new Set([
   "node_modules",
   ".ruff_cache",
   ".pytest_cache",
+  // agent/worktree scratch: a nested checkout here (e.g. .claude/worktrees/<branch>) is a full
+  // copy of the repo — scanning it duplicates every boundary and pollutes discovery.
+  ".claude",
 ]);
 
 export interface SourceFile {

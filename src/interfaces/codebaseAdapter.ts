@@ -39,6 +39,22 @@ export abstract class CodebaseAdapter {
   /** Selection: is this repo that codebase/framework? (signature files, package markers). */
   abstract detect(repo: string): boolean;
 
+  /**
+   * Does this adapter *fully* model the codebase's trace-coverage boundaries on its own?
+   *
+   * A known harness exposes a finite, knowable set of consumption boundaries (e.g. hermes's
+   * hook bus: one tool-dispatch seam + the LLM gateway). For such a codebase, generic
+   * language-pack discovery only adds noise — it name-matches side-channel clients, exec-sink
+   * utilities, and test helpers that are *not* the agent's consumption boundaries. When an
+   * active adapter declares itself authoritative, Phase A discovery uses *only* the
+   * authoritative adapters and skips the generic packs (and non-authoritative adapters),
+   * trading generic recall for precision on a codebase the author understands completely.
+   * Default false — an adapter only *augments* generic discovery (ADR-0010) unless it opts in.
+   */
+  authoritative(_repo: string): boolean {
+    return false;
+  }
+
   /** Optional scoping hints: dirs where the gateway / agent loop / tool dispatch live. */
   scope(): string[] {
     return [];

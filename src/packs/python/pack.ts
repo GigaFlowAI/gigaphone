@@ -231,6 +231,25 @@ export class PythonPack extends LanguagePack {
         );
       }
     }
+
+    // 5) lifecycle hook-bus tool boundary (generic). A harness that fires a named
+    //    `*tool_call*` observer hook with the tool result is reporting a tool-execution
+    //    boundary. Dotted-call matching misses these because dispatch goes through a registry /
+    //    middleware; the *hook* is the language-neutral signal that "a tool ran here". The
+    //    boundary is the function that produces the result — firing the hook directly, or
+    //    delegating to an emitter helper it calls (the emitter itself is not the boundary).
+    for (const [name, fn] of funcs) {
+      if (!is_hook_tool_boundary(fn) || is_tool_hook_emitter_name(name)) continue;
+      if (out.some((d) => d.matchCall.endsWith(`.${name}`))) continue;
+      out.push(
+        new Descriptor({
+          id: `tool-${name}`,
+          kind: BoundaryKind.TOOL_EXEC,
+          matchCall: `${module}.${name}`,
+          emitName: `${proj(module)}.${name}`,
+        }),
+      );
+    }
     return dedupe(out);
   }
 
@@ -577,6 +596,62 @@ function wraps_exec_sink(fn: Node): boolean {
       const dotted = attrChain(n.func);
       if (EXEC_CALL_EXACT.has(dotted) || endsWithAny(dotted, EXEC_CALL_PREFIXES)) return true;
     }
+  }
+  return false;
+}
+
+// --- lifecycle hook-bus recognition (generic across observer-hook harnesses) -----------
+// Real agent harnesses notify observers of a tool's execution in one of three shapes, all of
+// which mark the enclosing function as the tool-execution boundary:
+//   1. event in the callee NAME     — LangChain `run_manager.on_tool_end(output)`
+//   2. dispatcher + event ARGUMENT  — Hermes `invoke_hook("post_tool_call", result=…)`,
+//                                      LlamaIndex `on_event_start(CBEventType.FUNCTION_CALL)`
+//   3. delegation to an emitter helper — Hermes `handle_function_call` → `_emit_post_tool_call_hook`
+// The tool-lifecycle vocabulary (call/use/end/start/result/error/exec[ute], or function_call) —
+// deliberately NOT bare "tool" (`_fire_tool_gen_started` is a generation-progress signal, not
+// the consumption boundary).
+const TOOL_LIFECYCLE = /tool_?(?:call|use|end|start|result|error|exec(?:ute)?)|function_?call/i;
+// (1) callee whose NAME is a tool-lifecycle observer method: on_tool_end, post_tool_call,
+//     before_tool_execute, on_tool_execute_error (a trailing _error/_result may compound).
+const TOOL_HOOK_METHOD =
+  /^(?:on|pre|post|before|after)_tool(?:_(?:call|use|end|start|result|error|exec(?:ute)?))?(?:_(?:error|result))?$/i;
+// (2) generic hook/event dispatch verbs; the tool lifecycle is in their event argument.
+const HOOK_DISPATCH =
+  /(?:^|_)(?:invoke|emit|run|fire|publish|trigger|notify|dispatch)(?:_(?:hook|event|callback))?$|_hook$|^on_event_(?:start|end)$/i;
+// (3) emitter-helper names — thin wrappers whose job is firing the tool hook; not the boundary.
+const TOOL_HOOK_EMITTER = /(?:emit|notify|fire|publish|dispatch|invoke|_emit)_?.*tool_?(?:call|use)|tool_?call.*hook/i;
+
+function is_tool_hook_emitter_name(name: string): boolean {
+  return TOOL_HOOK_EMITTER.test(name);
+}
+
+/** First positional arg of a call as a comparable string: a string literal or a dotted name/enum. */
+function firstEventArg(call: Node): string | null {
+  const args = call.args as Node[];
+  if (!args.length) return null;
+  const a0 = args[0]!;
+  if (a0.type === "Constant" && typeof a0.value === "string") return a0.value as string;
+  const dotted = attrChain(a0);
+  return dotted || null;
+}
+
+/**
+ * Does `fn` execute a tool and report it through an observer-hook bus? Recognizes the three
+ * cross-framework shapes above, so it generalizes beyond any single harness's naming.
+ */
+function is_hook_tool_boundary(fn: Node): boolean {
+  for (const n of walk(fn)) {
+    if (n.type !== "Call") continue;
+    const callee = tail(attrChain(n.func));
+    // (1) the callee name is itself a tool-lifecycle observer method
+    if (TOOL_HOOK_METHOD.test(callee)) return true;
+    // (2) a generic hook/event dispatcher whose event argument names the tool lifecycle
+    if (HOOK_DISPATCH.test(callee)) {
+      const ev = firstEventArg(n);
+      if (ev !== null && TOOL_LIFECYCLE.test(ev)) return true;
+    }
+    // (3) delegates to a tool-hook emitter helper (indirection)
+    if (TOOL_HOOK_EMITTER.test(callee)) return true;
   }
   return false;
 }

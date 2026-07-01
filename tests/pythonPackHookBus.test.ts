@@ -53,6 +53,15 @@ const LLAMAINDEX = `def call(self, *args, **kwargs):
     self.callback_manager.on_event_end(CBEventType.FUNCTION_CALL, payload={"result": out})
     return out
 `;
+//  PydanticAI: fires capability hooks `before_tool_execute` / `after_tool_execute` (the
+//  `tool_execute` variant + a distinct verb vocabulary — held-out, not used to design the rule).
+const PYDANTIC = `def _run_execute_hooks(self, validated, usage):
+    cap = self.root_capability
+    args = cap.before_tool_execute(ctx, call=call, args=validated.validated_args)
+    tool_result = cap.wrap_tool_execute(ctx, call=call, args=args, handler=do_execute)
+    tool_result = cap.after_tool_execute(ctx, call=call, args=args, result=tool_result)
+    return tool_result
+`;
 //  a harness that executes a tool with NO observer hook — the recognizer must abstain here.
 const NO_HOOK = `def just_run_it(name, args):
     return _registry.dispatch(name, args)
@@ -85,6 +94,10 @@ describe("generic hook-bus tool boundary", () => {
 
   it("transfers to LlamaIndex's on_event_start(FUNCTION_CALL) enum-arg shape (finds call)", () => {
     expect(calls(LLAMAINDEX)).toContain("tool_exec:model_tools.call");
+  });
+
+  it("transfers to PydanticAI's before/after_tool_execute capability-hook shape", () => {
+    expect(calls(PYDANTIC)).toContain("tool_exec:model_tools._run_execute_hooks");
   });
 
   it("abstains when a tool runs with no observer hook (no false positive)", () => {

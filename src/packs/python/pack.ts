@@ -607,12 +607,14 @@ function wraps_exec_sink(fn: Node): boolean {
 //   2. dispatcher + event ARGUMENT  — Hermes `invoke_hook("post_tool_call", result=…)`,
 //                                      LlamaIndex `on_event_start(CBEventType.FUNCTION_CALL)`
 //   3. delegation to an emitter helper — Hermes `handle_function_call` → `_emit_post_tool_call_hook`
-// The tool-lifecycle vocabulary (call/use/end/start/result/error/exec, or function_call) —
+// The tool-lifecycle vocabulary (call/use/end/start/result/error/exec[ute], or function_call) —
 // deliberately NOT bare "tool" (`_fire_tool_gen_started` is a generation-progress signal, not
 // the consumption boundary).
-const TOOL_LIFECYCLE = /tool_?(?:call|use|end|start|result|error|exec)|function_?call/i;
-// (1) callee whose NAME is a tool-lifecycle observer method: on_tool_end, post_tool_call, …
-const TOOL_HOOK_METHOD = /^(?:on|pre|post|before|after)_tool(?:_(?:call|use|end|start|result|error|exec))?$/i;
+const TOOL_LIFECYCLE = /tool_?(?:call|use|end|start|result|error|exec(?:ute)?)|function_?call/i;
+// (1) callee whose NAME is a tool-lifecycle observer method: on_tool_end, post_tool_call,
+//     before_tool_execute, on_tool_execute_error (a trailing _error/_result may compound).
+const TOOL_HOOK_METHOD =
+  /^(?:on|pre|post|before|after)_tool(?:_(?:call|use|end|start|result|error|exec(?:ute)?))?(?:_(?:error|result))?$/i;
 // (2) generic hook/event dispatch verbs; the tool lifecycle is in their event argument.
 const HOOK_DISPATCH =
   /(?:^|_)(?:invoke|emit|run|fire|publish|trigger|notify|dispatch)(?:_(?:hook|event|callback))?$|_hook$|^on_event_(?:start|end)$/i;

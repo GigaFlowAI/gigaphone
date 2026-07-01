@@ -37,6 +37,27 @@ def stream_completion(messages):
     return client.chat.completions.create(messages=messages, stream=True)
 `;
 
+// Cross-framework shapes (verified against the real repos, not invented):
+//  LangChain: BaseTool.run fires run_manager.on_tool_end(...) — event in the METHOD NAME.
+const LANGCHAIN = `class BaseTool:
+    def run(self, tool_input, run_manager):
+        run_manager.on_tool_start(tool_input)
+        observation = self._run(tool_input)
+        run_manager.on_tool_end(observation)
+        return observation
+`;
+//  LlamaIndex: fires on_event_start(CBEventType.FUNCTION_CALL, ...) — event in an ENUM arg.
+const LLAMAINDEX = `def call(self, *args, **kwargs):
+    self.callback_manager.on_event_start(CBEventType.FUNCTION_CALL, payload={"tool": self})
+    out = self._fn(*args, **kwargs)
+    self.callback_manager.on_event_end(CBEventType.FUNCTION_CALL, payload={"result": out})
+    return out
+`;
+//  a harness that executes a tool with NO observer hook — the recognizer must abstain here.
+const NO_HOOK = `def just_run_it(name, args):
+    return _registry.dispatch(name, args)
+`;
+
 describe("generic hook-bus tool boundary", () => {
   it("finds the dispatcher behind an emitter helper, not the emitter itself", () => {
     const found = calls(INDIRECT);
@@ -54,5 +75,19 @@ describe("generic hook-bus tool boundary", () => {
     // stream_completion calls _fire_tool_gen_started (a 'tool_gen' event) — not a tool_call hook
     expect(found.some((c) => c.includes("tool_exec") && c.includes("stream_completion"))).toBe(false);
     expect(found.some((c) => c.includes("tool_exec") && c.includes("_fire_tool_gen_started"))).toBe(false);
+  });
+
+  // cross-framework transfer: the same recognizer handles other harnesses' hook shapes,
+  // verified against the real LangChain / LlamaIndex source (not just Hermes).
+  it("transfers to LangChain's on_tool_end method-name shape (finds run)", () => {
+    expect(calls(LANGCHAIN)).toContain("tool_exec:model_tools.run");
+  });
+
+  it("transfers to LlamaIndex's on_event_start(FUNCTION_CALL) enum-arg shape (finds call)", () => {
+    expect(calls(LLAMAINDEX)).toContain("tool_exec:model_tools.call");
+  });
+
+  it("abstains when a tool runs with no observer hook (no false positive)", () => {
+    expect(calls(NO_HOOK).some((c) => c.startsWith("tool_exec"))).toBe(false);
   });
 });

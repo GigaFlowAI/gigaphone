@@ -30,5 +30,6 @@ node_modules/
 unresolved.json
 resolution.json
 
-# local agent worktrees / settings
-.claude/
+# local agent worktrees / settings — but DO track shared slash commands
+.claude/*
+!.claude/commands/
